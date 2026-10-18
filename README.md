@@ -233,7 +233,8 @@ times the by-cinema layout).
 The published `/52frames/` site uses measurement ID `G-HJQD0PND68`; this is public configuration,
 not a secret. No API secret, backend, npm dependency or hosting change is required. Local development
 and other hostnames/Pages projects do not load Google. Do Not Track and Global Privacy Control are
-honoured. The asynchronous tag never blocks showtimes; blocked/failed analytics silently stops tracking.
+honoured. A bounded startup queue preserves early interactions while the optional module loads;
+failed imports discard the queue. The asynchronous tag never blocks showtimes; blocked/failed analytics silently stops tracking.
 
 The code denies ad storage, ad user data and ad personalization, disables Google Signals and
 advertising personalization, and strips query strings and hashes from the configured page URL and
@@ -261,7 +262,7 @@ not changed by this PR. There is no custom analytics dashboard in the website; u
 | `cinema_star` | Chain and add/remove action, not the saved list |
 | `stars_open`, `stars_clear` | No additional details |
 | `location_toggle` | Request/off action, never coordinates |
-| `booking_click` | Chain and normalized movie key; does not indicate a purchase |
+| `booking_click` | Chain and normalized movie key, including middle-clicks; does not indicate a purchase |
 | `seat_preview_open`, `seat_preview_loaded`, `seat_preview_failed` | Chain only; no raw error text |
 
 For breakdowns, register event-scoped custom dimensions for `movie`, `chain`, `control`, `value` and
@@ -271,8 +272,9 @@ page views. Search rendering remains immediate; only its analytics event is debo
 To verify after publishing, browse the production site and check GA4 Realtime/DebugView and browser
 network requests. Local tests validate queued commands and mocked tag loading without sending real
 visitor data; they do not prove that the property is receiving production events. To disable analytics,
-remove the optional `import("./analytics.js?v=26")` initialization block in `site/js/app.js`. All tracking hooks then remain harmless no-ops.
+remove the optional `import("./analytics.js?v=26")` initialization block in `site/js/app.js`. Replace the startup tracking queue with a no-op when removing that block.
 
 Browser regression checks use Playwright installed separately: `node scripts/check-analytics.mjs`.
 Set `CHROMIUM_PATH` if using an existing Chromium executable. The checks mock Google and provider
-responses, run desktop/mobile scenarios with tracking available or blocked, and do not send real events.
+responses, run desktop/mobile scenarios with tracking available, blocked or delayed, and do not send real events.
+Mobile booking checks use real touch taps; long holds dispatch touch-pointer events to exercise suppression.

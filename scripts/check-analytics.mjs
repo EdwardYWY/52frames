@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import { createRequire } from "node:module";
+import { movieGroupKey } from "../site/js/models.js";
 import { encodeSnapshot } from "../site/js/snapshot.js";
 import { parseGscCinemas, parseGscShowtimes, parseTgvCinemas, parseTgvShowtimes } from "../site/js/providers.js";
 import { parseXml } from "./xml.mjs";
@@ -29,22 +30,34 @@ const origin = "https://edwardywy.github.io";
 const mime = { ".html":"text/html", ".js":"text/javascript", ".css":"text/css", ".svg":"image/svg+xml", ".woff2":"font/woff2" };
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ["--disable-dev-shm-usage", "--disable-gpu"] });
 try {
-  for (const mobile of [false, true]) for (const blocked of [false, true, "module"]) {
+  for (const mobile of [false, true]) for (const blocked of (baseline ? [false, true] : [false, true, "module", "delayed"])) {
     const context = await browser.newContext({ viewport: mobile ? {width:390,height:844} : {width:1280,height:900}, isMobile:mobile, hasTouch:mobile,
       geolocation:{latitude:3.14,longitude:101.69}, permissions:["geolocation"] });
     const page = await context.newPage();
     page.setDefaultTimeout(10000);
-    console.log(`Checking ${mobile ? "mobile" : "desktop"}, tag ${blocked === "module" ? "module-blocked" : blocked ? "blocked" : "mocked"}`);
+    console.log(`Checking ${mobile ? "mobile" : "desktop"}, tag ${blocked === "module" ? "module-blocked" : blocked === "delayed" ? "module-delayed" : blocked ? "blocked" : "mocked"}`);
     await page.clock.install({ time: new Date("2026-10-15T04:00:00Z") });
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
+    let delayAnalytics = blocked === "delayed";
+    let releaseAnalytics;
+    let moduleRequested;
+    const moduleRequest = new Promise((resolve) => { moduleRequested = resolve; });
     let failSeats = false;
     const bookRequests = [];
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       const send = (body, type="application/json") => route.fulfill({status:200,contentType:type,body});
-      if (url.hostname === "www.googletagmanager.com") return blocked ? route.abort() : send("/* mocked Google tag: no visitor data sent */", "text/javascript");
-      if (blocked === "module" && url.pathname.endsWith("/analytics.js")) return route.abort();
+      if (url.hostname === "www.googletagmanager.com") return blocked === true ? route.abort() : send("/* mocked Google tag: no visitor data sent */", "text/javascript");
+      if (url.pathname.endsWith("/analytics.js")) {
+        if (blocked === "module") return route.abort();
+        if (delayAnalytics) {
+          delayAnalytics = false;
+          // Hold the first import until the deep-linked movie and an early interaction render.
+          moduleRequested();
+          await new Promise((resolve) => { releaseAnalytics = resolve; });
+        }
+      }
       if (url.origin === origin) {
         if (url.pathname.endsWith("/data/showtimes.json")) return send(JSON.stringify(snapshot));
         const path = url.pathname.replace(/^\/52frames\//, "") || "index.html";
@@ -64,10 +77,25 @@ try {
       if (route.request().isNavigationRequest()) { bookRequests.push(url.href); return send("Booking destination", "text/html"); }
       return route.abort();
     });
-    await page.goto(origin + "/52frames/?private=not-collected");
+    const deepLink = blocked === "delayed" ? `#/movie/${encodeURIComponent(movieGroupKey(gscShows[0]))}` : "";
+    await page.goto(origin + "/52frames/?private=not-collected" + deepLink, {waitUntil:"domcontentloaded"});
+    if (blocked === "delayed" && !baseline) {
+      await moduleRequest;
+      await page.locator("#m-schedule .trow").first().waitFor();
+      assert.equal(await page.evaluate(() => window.dataLayer), undefined);
+      await page.locator("#m-after").selectOption("18:00", {force:true});
+      releaseAnalytics();
+      await page.waitForFunction(() => window.dataLayer?.some(a => a[0] === "event" && a[1] === "movie_open"));
+      const initialEvents = await page.evaluate(() => window.dataLayer.filter(a => a[0] === "event").map(a => [...a]));
+      assert.equal(initialEvents.filter(a => a[1] === "movie_open").length, 1);
+      assert.ok(initialEvents.some(a => a[1] === "filter_change" && a[2].control === "m-after"));
+      await page.keyboard.press("Escape");
+      await page.locator("#sheet").waitFor({state:"hidden"});
+    }
     await page.waitForFunction(() => document.querySelectorAll("#grid a.card").length >= 2);
     const count = () => page.locator("#grid a.card").count();
     const initial = await count();
+    const searchEvents = () => page.evaluate(() => window.dataLayer?.filter(a => a[0] === "event" && a[1] === "search_used").length || 0);
     const select = async (id, value) => page.locator(`#${id}`).selectOption(value, {force:true});
     if (mobile) await page.locator("#filters-toggle").click();
     // Search, language search, clear, and keyboard shortcut.
@@ -76,10 +104,17 @@ try {
     assert.equal(await count(),1);
     await page.locator("#clear-search").click();
     assert.equal(await count(),initial);
+    const completedSearches = await searchEvents();
     await page.locator("#q").fill("Cantonese");
     assert.ok(await count() >= 1);
     await page.locator("#q").press("Escape");
     assert.equal(await count(),initial);
+    await page.waitForTimeout(900);
+    if (!baseline) assert.equal(await searchEvents(), completedSearches, "Escape cancels an abandoned search");
+    await page.locator("#q").fill("Go For Broke");
+    await page.locator("#clear-search").click();
+    await page.waitForTimeout(900);
+    if (!baseline) assert.equal(await searchEvents(), completedSearches, "Clear cancels an abandoned search");
     await page.locator("#q").blur();
     await page.keyboard.press("/");
     assert.equal(await page.locator("#q").evaluate((n)=>n===document.activeElement),true);
@@ -144,7 +179,8 @@ try {
       // The post-hold touch click must not trigger booking.
       if (mobile) {
         const before=bookRequests.length;
-        await target.dispatchEvent("click",{bubbles:true,cancelable:true});
+        const allowed = await target.evaluate(node => node.dispatchEvent(new MouseEvent("click", {bubbles:true,cancelable:true})));
+        assert.equal(allowed, false, "touch hold must cancel the following click");
         assert.equal(bookRequests.length,before);
       }
       await page.locator(".seatmap-close").click();
@@ -156,11 +192,24 @@ try {
     failSeats=false;
     // Ordinary tap still opens the booking destination.
     const popupPromise=context.waitForEvent("page");
-    await page.locator("#m-schedule a.seat-hold").first().click();
+    const booking = page.locator("#m-schedule a.seat-hold").first();
+    if (mobile) await booking.tap();
+    else await booking.click();
     const popup=await popupPromise;
     await popup.waitForLoadState();
     assert.ok(bookRequests.length>=1);
     await popup.close();
+    if (!mobile) {
+      // Use real middle-button input, but stop its background tab at document level: the
+      // headless test browser cannot reliably load background tabs. App handling runs first.
+      await page.evaluate(() => document.addEventListener("auxclick", (event) => {
+        window.middleClickWasPrevented = event.defaultPrevented;
+        event.preventDefault();
+      }, {once:true}));
+      await booking.click({button:"middle"});
+      assert.equal(await page.evaluate(() => window.middleClickWasPrevented), false, "app must preserve native middle-click navigation");
+      await booking.dispatchEvent("auxclick", {button:2, bubbles:true,cancelable:true});
+    }
     await page.keyboard.press("Escape");
     await page.locator("#sheet").waitFor({state:"hidden"});
     await page.locator("#clear-search").click();
@@ -187,11 +236,11 @@ try {
     await page.keyboard.press("Escape");
     await page.locator("#stars").waitFor({state:"hidden"});
     assert.deepEqual(errors,[]);
-    if (!baseline && !blocked) {
+    if (!baseline && (blocked === false || blocked === "delayed")) {
       const events=await page.evaluate(()=>window.dataLayer.filter(a=>a[0]==="event").map(a=>a[1]));
       for (const name of ["page_view","search_used","filter_change","movie_open","cinema_star","stars_open","stars_clear","location_toggle","seat_preview_open","seat_preview_loaded","seat_preview_failed","booking_click"]) assert.ok(events.includes(name),`Missing ${name}`);
       assert.equal(events.filter(n=>n==="page_view").length,1);
-      assert.equal(events.filter(n=>n==="booking_click").length,1, "touch holds must not count as booking clicks");
+      assert.equal(events.filter(n=>n==="booking_click").length,mobile ? 1 : 2, "touch holds must not count as booking clicks");
     }
     if (!baseline && blocked === true) assert.equal(await page.evaluate(()=>window.dataLayer.length),0);
     if (!baseline && blocked === "module") assert.equal(await page.evaluate(()=>window.dataLayer),undefined);
@@ -204,7 +253,7 @@ try {
     assert.equal(await page.locator("#star-count").textContent(),"1");
     await page.waitForFunction(()=>document.querySelector("#locate").getAttribute("aria-pressed")==="true");
     assert.deepEqual(errors,[]);
-    console.log(`PASS ${baseline?"baseline":"analytics"} ${mobile?"mobile":"desktop"} tag=${blocked==="module"?"module-blocked":blocked?"blocked":"mocked"}: search, filters, dates, grouping, stars, location, GSC/TGV seats/prices, failure, booking, dialogs; no page errors`);
+    console.log(`PASS ${baseline?"baseline":"analytics"} ${mobile?"mobile":"desktop"} tag=${blocked==="module"?"module-blocked":blocked==="delayed"?"module-delayed":blocked?"blocked":"mocked"}: search, filters, dates, grouping, stars, location, GSC/TGV seats/prices, failure, booking, dialogs; no page errors`);
     await context.close();
   }
 } finally { await browser.close(); }

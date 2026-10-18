@@ -11,7 +11,11 @@ import { collectCatalogue } from "./catalog.js?v=23";
 import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=23";
 import { loadSnapshot } from "./snapshot.js?v=23";
 import { enableSeatPreview } from "./seatmap.js?v=26";
-let track = () => {}; // Replaced only if the optional analytics module loads successfully.
+// Keep early interactions while the optional module loads, without delaying the app.
+let pendingAnalytics = [];
+let track = (...event) => {
+  if (pendingAnalytics.length < 100) pendingAnalytics.push(event);
+};
 
 const $ = (id) => document.getElementById(id);
 const providers = createProviders();
@@ -1116,7 +1120,13 @@ async function init() {
   import("./analytics.js?v=26").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
-  }).catch(() => {}); // A blocked/missing analytics module must not prevent the app from starting.
+    const pending = pendingAnalytics;
+    pendingAnalytics = null;
+    for (const event of pending) track(...event);
+  }).catch(() => {
+    track = () => {};
+    pendingAnalytics = null;
+  }); // A blocked/missing analytics module must not prevent the app from starting.
   const saved = readLocal("showtimes:prefs", {});
   // All Malaysia by default. ("area", not the old "region": that one saved the old Klang Valley default.)
   if (typeof saved.area === "string" && [...$("region").options].some((o) => o.value === saved.area)) {
@@ -1167,7 +1177,9 @@ async function init() {
   let searchTimer;
   $("q").addEventListener("input", () => {
     clearTimeout(searchTimer);
-    if (searchText()) searchTimer = setTimeout(() => track("search_used"), 800);
+    if (searchText()) searchTimer = setTimeout(() => {
+      if (searchText()) track("search_used");
+    }, 800);
   });
   for (const id of ["region", "cinema", "sort", "hide-concerts", "m-region", "m-cinema", "m-after", "m-sort"]) {
     $(id).addEventListener("change", () => track("filter_change", {
@@ -1214,11 +1226,14 @@ async function init() {
     fetchPrices: (show, signal) => fetchSeatData(show, signal, "fetchSeatPrices"),
   });
   // The seat-map capture handler suppresses the click after a touch hold before it gets here.
-  $("m-schedule").addEventListener("click", (e) => {
+  const trackBooking = (e) => {
+    if (e.type === "auxclick" && e.button !== 1) return;
     const node = e.target.closest("a.seat-hold");
     const show = node && seatShows.get(node);
     if (show && !e.defaultPrevented) track("booking_click", { chain: show.chain, movie: movieGroupKey(show) });
-  });
+  };
+  $("m-schedule").addEventListener("click", trackBooking);
+  $("m-schedule").addEventListener("auxclick", trackBooking);
   $("sheet").addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) closeSheet();
   });
