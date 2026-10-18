@@ -99,7 +99,8 @@ build step, no dependencies.
   sends cinema coordinates; TGV's are in `site/js/places.js` (looked up once from OpenStreetMap,
   © OpenStreetMap contributors), because TGV's own map links are missing or wrong for many cinemas.
 - **Starred cinemas** (top bar → Starred): star or unstar any cinema, clear all. Stars, location
-  on/off and the last region are kept in this browser's `localStorage`; nothing is sent anywhere.
+  on/off and the last region are kept in this browser's `localStorage`. Analytics records feature
+  actions without sending the saved star list or precise location.
 
 Live seat maps (the hidden 1.5-second hold) use the chains' public read-only endpoints, with no login:
 TGV's `moviesession_getseatplan` and GSC's `getHallSeatStatus`. Shows don't carry the chains' session
@@ -226,3 +227,58 @@ node scripts/bench-movie-view.mjs --snapshot /tmp/showtimes.json --cpu 4   # 4x 
 It prints the time until the next frame for each action, split into script, style and layout, and the
 functions that took longest (`--profile 0` skips the profiler for cleaner totals; `--group cinema`
 times the by-cinema layout).
+
+## Website analytics (GA4)
+
+The published `/52frames/` site uses measurement ID `G-HJQD0PND68`; this is public configuration,
+not a secret. No API secret, backend, npm dependency or hosting change is required. Local development
+and other hostnames/Pages projects do not load Google. Do Not Track and Global Privacy Control are
+honoured. A bounded startup queue preserves early interactions while the optional module loads;
+failed imports discard the queue. The asynchronous tag never blocks showtimes; blocked/failed analytics silently stops tracking. A successfully loaded blocker stub also has a
+bounded queue; a working Google tag continues processing events normally.
+
+The code denies ad storage, ad user data and ad personalization, disables Google Signals and
+advertising personalization, and strips query strings and hashes from the configured page URL and
+referrer. Analytics storage is enabled for visit/session measurement; this implementation adds no
+consent interface. This does not represent a visitor consent choice. If consent collection is needed
+for the intended audience, gate analytics loading on that choice before deployment.
+
+Account settings are separate from website code. In GA Admin, keep **all Account details data-sharing
+options off**, including Google products & services and Modeling contributions & business insights.
+Keep Google Signals, user-provided data collection and advertising integrations off. These settings
+cannot be verified or changed using the measurement ID, and disabling sharing is not a blanket switch
+for all AI processing within the Analytics service.
+
+**Before deployment:** turn off the web stream's **Enhanced measurement**. This integration sends one
+explicit page view and its own feature events; automatic history/outbound/search measurement is not
+needed and could add duplicate events or collect extra URL details. Existing account settings are
+not changed by this PR. There is no custom analytics dashboard in the website; use GA4 Reports/Explore.
+
+| Event | Details sent |
+|---|---|
+| `page_view` | Fixed site title, page URL/referrer without query/hash |
+| `movie_open` | Normalized movie key (including language) |
+| `search_used` | No search text; counted after an 800 ms pause |
+| `filter_change` | Control and option; one event per option toggle, including multi-selects. Cinema filters send only selection/starred, not the list |
+| `cinema_star` | Chain and add/remove action, not the saved list |
+| `stars_open`, `stars_clear` | No additional details |
+| `location_toggle` | Request/off action, never coordinates |
+| `booking_click` | Chain and normalized movie key, including middle-clicks; does not indicate a purchase |
+| `seat_preview_open`, `seat_preview_loaded`, `seat_preview_failed` | Chain only; no raw error text |
+
+For breakdowns, register event-scoped custom dimensions for `movie`, `chain`, `control`, `value` and
+`action` in GA4. Feature events are distinct from page views; movie sheets do not count as additional
+page views. Search rendering remains immediate; only its analytics event is debounced.
+
+To verify after publishing, browse the production site and check GA4 Realtime/DebugView and browser
+network requests. Local tests validate queued commands and mocked tag loading without sending real
+visitor data; they do not prove that the property is receiving production events. To disable analytics,
+remove the optional `import("./analytics.js?v=26")` initialization block in `site/js/app.js`. Replace the startup tracking queue with a no-op when removing that block.
+
+Browser regression checks use Playwright installed separately: `node scripts/check-analytics.mjs`.
+Set `CHROMIUM_PATH` if using an existing Chromium executable. The checks mock Google and provider
+responses, run desktop/mobile scenarios with tracking available, blocked or delayed, and do not send real events.
+Mobile booking checks use real touch taps; long holds dispatch touch-pointer events to exercise suppression.
+
+Run the browser regression checks before changing analytics, event wiring or seat-preview behavior.
+The Pages workflow runs the Python/JavaScript unit suites; it does not install Playwright or run these browser checks.

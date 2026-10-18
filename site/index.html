@@ -8,7 +8,7 @@
 <title>52 Frames</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Cpath d='M6 6h14l6 6v14H6z' fill='%23ffd200'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/style.css?v=25">
-<script type="module" src="js/app.js?v=25"></script>
+<script type="module" src="js/app.js?v=26"></script>
 </head>
 <body>
 
@@ -84,6 +84,8 @@
     <p>Times are Malaysia time. Tap a time to book on the chain's own site; seats are chosen there.
       ☆ a cinema to keep it at the top; stars and your location stay in this browser only.
       Struck-through times are sold out; <b class="mono">+1</b> marks shows after midnight.</p>
+    <p>Google Analytics measures visits and feature usage, with advertising features disabled.
+      Search text and your precise location are not included in our analytics events.</p>
     <p>Data comes straight from GSC and TGV's public website endpoints, refreshed in a shared snapshot.
       Unofficial and unaffiliated.</p>
   </footer>
@@ -97,7 +99,7 @@
     <div class="stars-main">
       <h2 id="stars-title">Starred cinemas</h2>
       <p class="stars-note">Starred cinemas are listed first in every movie, and the cinema menus can show them alone.
-        Saved in this browser only (local storage); nothing is sent anywhere.</p>
+        Your saved list stays in this browser (local storage). Analytics counts star/unstar actions without sending the list.</p>
       <div class="sec-head"><h3>Starred</h3><span class="sec-rule"></span>
         <button type="button" class="link-btn mono" id="stars-clear">Clear all</button></div>
       <div id="stars-mine"></div>
