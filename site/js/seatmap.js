@@ -73,7 +73,10 @@ export function seatPriceEntries(plan, prices) {
  * showFor(element) gives the show behind a showtime; fetchPlan(show, signal) its seat plan.
  * fetchPrices(show, signal) runs alongside it; unavailable prices leave the seats alone.
  */
-export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPrices = async () => [] }) {
+export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPrices = async () => [], onEvent = () => {} }) {
+  const report = (name, show) => {
+    try { onEvent(name, { chain: show.chain }); } catch {}
+  };
   let timer = null;
   let holding = null; // the showtime being held
   let origin = null; // where the finger went down
@@ -178,6 +181,7 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
   }
 
   function open(target, show, how) {
+    report("seat_preview_open", show);
     close();
     anchor = target;
     mode = how;
@@ -215,6 +219,7 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
     fetchPlan(show, signal).then(
       (plan) => {
         if (signal.aborted) return;
+        report("seat_preview_loaded", show);
         loadedPlan = plan;
         sub.textContent = `${show.cinema_name} · ${plan.free} of ${plan.total} seats left`;
         body.replaceChildren(
@@ -238,6 +243,7 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
       },
       (err) => {
         if (signal.aborted) return;
+        report("seat_preview_failed", show);
         body.replaceChildren(el("p", { class: "seatmap-note mono" }, `Couldn't load seats: ${err.message || err}`));
         place();
       },

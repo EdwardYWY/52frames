@@ -10,7 +10,8 @@ import { enhanceSelect } from "./select.js?v=23";
 import { collectCatalogue } from "./catalog.js?v=23";
 import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=23";
 import { loadSnapshot } from "./snapshot.js?v=23";
-import { enableSeatPreview } from "./seatmap.js?v=25";
+import { enableSeatPreview } from "./seatmap.js?v=26";
+let track = () => {}; // Replaced only if the optional analytics module loads successfully.
 
 const $ = (id) => document.getElementById(id);
 const providers = createProviders();
@@ -266,6 +267,7 @@ function locate() {
 }
 
 function toggleLocation() {
+  track("location_toggle", { action: state.here ? "off" : "request" });
   if (state.here) {
     state.here = null;
     if ($("m-sort").value === "near") $("m-sort").value = "time";
@@ -283,6 +285,7 @@ function saveStars() {
 }
 
 function toggleStar(key, region = "") {
+  track("cinema_star", { chain: splitKey(key)[0], action: state.starred.has(key) ? "remove" : "add" });
   if (state.starred.has(key)) state.starred.delete(key);
   else {
     const [chain, name] = splitKey(key);
@@ -335,6 +338,7 @@ async function allCinemas() {
 let starsCinemas = null;
 
 async function openStars() {
+  track("stars_open");
   $("stars").hidden = false;
   document.body.classList.add("locked");
   $("stars").querySelector(".close").focus({ preventScroll: true });
@@ -924,6 +928,7 @@ function timeRow(show, now) {
 }
 
 let sheetKey = null;
+let trackedMovieKey = null;
 // Large enough that the browser takes the highest-resolution poster for the movie view.
 const HERO_SIZES = "500px";
 
@@ -932,6 +937,10 @@ function renderSheet() {
   const view = state.sheet;
   const all = view.shows.filter((s) => movieGroupKey(s) === key);
   const summary = summarizeMovies(all)[0] || state.lastSummary.get(key);
+  if (summary && trackedMovieKey !== key) {
+    track("movie_open", { movie: key });
+    trackedMovieKey = key;
+  }
   if (summary && state.lastSummary.has(key)) summary.title = state.lastSummary.get(key).title;
 
   if (sheetKey !== key) {
@@ -1057,6 +1066,7 @@ function route() {
   if (!key) {
     seatPreview?.close();
     sheetKey = null;
+    trackedMovieKey = null;
     document.title = "52 Frames";
     returnFocus?.focus?.({ preventScroll: true });
     returnFocus = null;
@@ -1103,6 +1113,10 @@ function render() {
 // ---------------------------------------------------------------- wiring
 
 async function init() {
+  import("./analytics.js?v=26").then((analytics) => {
+    analytics.initAnalytics();
+    track = analytics.track;
+  }).catch(() => {}); // A blocked/missing analytics module must not prevent the app from starting.
   const saved = readLocal("showtimes:prefs", {});
   // All Malaysia by default. ("area", not the old "region": that one saved the old Klang Valley default.)
   if (typeof saved.area === "string" && [...$("region").options].some((o) => o.value === saved.area)) {
@@ -1149,6 +1163,22 @@ async function init() {
   for (const id of ["cinema", "sort"]) $(id).addEventListener("change", render);
   $("hide-concerts").addEventListener("change", () => { savePrefs(); render(); });
   $("q").addEventListener("input", render);
+  // Debounce analytics only; search still renders immediately. Never send the search text.
+  let searchTimer;
+  $("q").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    if (searchText()) searchTimer = setTimeout(() => track("search_used"), 800);
+  });
+  for (const id of ["region", "cinema", "sort", "hide-concerts", "m-region", "m-cinema", "m-after", "m-sort"]) {
+    $(id).addEventListener("change", () => track("filter_change", {
+      control: id,
+      value: id.endsWith("cinema") ? (onlyStarred($(id)) ? "starred" : "selection") : id === "hide-concerts" ? String($(id).checked) : $(id).value,
+    }));
+  }
+  for (const input of document.querySelectorAll("input[name=chain], input[name=group]")) {
+    input.addEventListener("change", () => track("filter_change", { control: input.name, value: input.name === "chain" ? selectedChains().join(",") : selectedGroup() }));
+  }
+  $("m-dates").addEventListener("change", () => track("filter_change", { control: "date" }));
   $("clear-search").addEventListener("click", () => {
     $("q").value = "";
     render();
@@ -1178,9 +1208,16 @@ async function init() {
   }
   seatPreview = enableSeatPreview($("m-schedule"), {
     selector: ".seat-hold",
+    onEvent: (name, params) => track(name, params),
     showFor: (node) => seatShows.get(node),
     fetchPlan: (show, signal) => fetchSeatData(show, signal, "fetchSeatPlan"),
     fetchPrices: (show, signal) => fetchSeatData(show, signal, "fetchSeatPrices"),
+  });
+  // The seat-map capture handler suppresses the click after a touch hold before it gets here.
+  $("m-schedule").addEventListener("click", (e) => {
+    const node = e.target.closest("a.seat-hold");
+    const show = node && seatShows.get(node);
+    if (show && !e.defaultPrevented) track("booking_click", { chain: show.chain, movie: movieGroupKey(show) });
   });
   $("sheet").addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) closeSheet();
@@ -1194,6 +1231,7 @@ async function init() {
   for (const id of ["stars-region", "stars-chain"]) $(id).addEventListener("change", renderStars);
   $("stars-clear").addEventListener("click", () => {
     if (!confirm(`Unstar all ${plural(state.starred.size, "cinema")}?`)) return;
+    track("stars_clear");
     state.starred.clear();
     saveStars();
     render();
