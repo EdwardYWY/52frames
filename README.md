@@ -234,7 +234,8 @@ The published `/52frames/` site uses measurement ID `G-HJQD0PND68`; this is publ
 not a secret. No API secret, backend, npm dependency or hosting change is required. Local development
 and other hostnames/Pages projects do not load Google. Do Not Track and Global Privacy Control are
 honoured. A bounded startup queue preserves early interactions while the optional module loads;
-failed imports discard the queue. The asynchronous tag never blocks showtimes; blocked/failed analytics silently stops tracking.
+failed imports discard the queue. The asynchronous tag never blocks showtimes; blocked/failed analytics silently stops tracking. A successfully loaded blocker stub also has a
+bounded queue; a working Google tag continues processing events normally.
 
 The code denies ad storage, ad user data and ad personalization, disables Google Signals and
 advertising personalization, and strips query strings and hashes from the configured page URL and
@@ -258,7 +259,7 @@ not changed by this PR. There is no custom analytics dashboard in the website; u
 | `page_view` | Fixed site title, page URL/referrer without query/hash |
 | `movie_open` | Normalized movie key (including language) |
 | `search_used` | No search text; counted after an 800 ms pause |
-| `filter_change` | Control and option; cinema filters send only selection/starred, not the list |
+| `filter_change` | Control and option; one event per option toggle, including multi-selects. Cinema filters send only selection/starred, not the list |
 | `cinema_star` | Chain and add/remove action, not the saved list |
 | `stars_open`, `stars_clear` | No additional details |
 | `location_toggle` | Request/off action, never coordinates |
@@ -278,3 +279,6 @@ Browser regression checks use Playwright installed separately: `node scripts/che
 Set `CHROMIUM_PATH` if using an existing Chromium executable. The checks mock Google and provider
 responses, run desktop/mobile scenarios with tracking available, blocked or delayed, and do not send real events.
 Mobile booking checks use real touch taps; long holds dispatch touch-pointer events to exercise suppression.
+
+Run the browser regression checks before changing analytics, event wiring or seat-preview behavior.
+The Pages workflow runs the Python/JavaScript unit suites; it does not install Playwright or run these browser checks.

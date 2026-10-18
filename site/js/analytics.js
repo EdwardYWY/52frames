@@ -20,15 +20,18 @@ export function createAnalytics(win, doc) {
   const MAX_PENDING = 100;
   function command(...args) {
     if (!ready) return;
-    if (win.dataLayer.length < MAX_PENDING || loaded) win.gtag(...args);
+    // Google wraps push() when it processes the queue. A blocker can load a stub instead;
+    // keep that still-native queue bounded even when the script's load event has fired.
+    if (win.dataLayer.push === Array.prototype.push && win.dataLayer.length >= MAX_PENDING) return;
+    win.gtag(...args);
   }
-  let loaded = false;
   function init() {
     if (ready) return;
     try {
       // Local development, PR previews and automated tests don't pollute the real property.
       if (win.location.hostname !== "edwardywy.github.io" || !win.location.pathname.startsWith("/52frames/")) return;
-      if (win.navigator.globalPrivacyControl || win.navigator.doNotTrack === "1") return;
+      if (win.navigator.globalPrivacyControl || win.navigator.doNotTrack === "1" ||
+          win.doNotTrack === "1" || win.navigator.msDoNotTrack === "1") return;
       win.dataLayer = win.dataLayer || [];
       win.gtag = win.gtag || function () { win.dataLayer.push(arguments); };
       ready = true;
@@ -50,7 +53,6 @@ export function createAnalytics(win, doc) {
       const script = doc.createElement("script");
       script.async = true;
       script.src = `https://www.googletagmanager.com/gtag/js?id=${MEASUREMENT_ID}`;
-      script.onload = () => { loaded = true; };
       script.onerror = () => { ready = false; win.dataLayer.length = 0; };
       doc.head.append(script);
     } catch {

@@ -38,7 +38,7 @@ test("events allow only declared fields, omit search text and coordinates, and b
 });
 
 test("development, other Pages projects and privacy opt-outs send nothing", () => {
-  for (const change of [(b) => b.win.location.hostname = "localhost", (b) => b.win.location.pathname = "/other/", (b) => b.win.navigator.doNotTrack = "1", (b) => b.win.navigator.globalPrivacyControl = true]) {
+  for (const change of [(b) => b.win.location.hostname = "localhost", (b) => b.win.location.pathname = "/other/", (b) => b.win.navigator.doNotTrack = "1", (b) => b.win.navigator.globalPrivacyControl = true, (b) => b.win.doNotTrack = "1", (b) => b.win.navigator.msDoNotTrack = "1"]) {
     const b = browser();
     change(b);
     b.analytics.init();
@@ -61,4 +61,17 @@ test("blocked Google scripts and broken analytics never throw or grow the queue 
   other.analytics.init();
   other.win.gtag = () => { throw new Error("extension blocked tracking"); };
   assert.doesNotThrow(() => other.analytics.track("stars_open"));
+});
+
+
+test("a successfully loaded blocker stub stays bounded; a processing tag keeps receiving events", () => {
+  const { win, scripts, analytics } = browser();
+  analytics.init();
+  scripts[0].onload?.(); // A stub may load successfully without consuming the queue.
+  for (let i = 0; i < 200; i++) analytics.track("search_used");
+  assert.equal(win.dataLayer.length, 100);
+  const processed = [];
+  win.dataLayer.push = (...items) => { processed.push(...items); return win.dataLayer.length; };
+  for (let i = 0; i < 200; i++) analytics.track("search_used");
+  assert.equal(processed.length, 200, "a processing tag is not limited by its history length");
 });
