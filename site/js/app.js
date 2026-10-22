@@ -6,10 +6,11 @@ import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, unique
 import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=23";
 import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=23";
 import { createProviders, domParseXml } from "./providers.js?v=24";
-import { enhanceSelect } from "./select.js?v=23";
+import { enhanceSelect } from "./select.js?v=24";
 import { collectCatalogue } from "./catalog.js?v=23";
 import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=23";
 import { loadSnapshot } from "./snapshot.js?v=23";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=27";
 import { enableSeatPreview } from "./seatmap.js?v=26";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
@@ -451,7 +452,7 @@ function posterFrame(summary, sizes) {
 const regionOf = (view) => (view === state.sheet ? $("m-region") : $("region")).value;
 const emptyKey = (view) => `${view.date}|${regionOf(view)}`;
 function renderDateStrip(strip, name, date) {
-  const dates = movieDates(state.main.shows, state.movieKey, matchesCinema($("cinema")));
+  const dates = movieDates(state.main.shows, state.movieKey, matchesMain());
   if (!dates.includes(date)) dates.push(date);
   dates.sort();
   strip.replaceChildren(...dates.map(iso => {
@@ -468,22 +469,14 @@ function setDate(view, iso) {
   load(view);
 }
 
-function fillAfterOptions() {
-  const select = $("m-after");
-  const keep = select.value;
-  const options = [["", "Any time"]];
-  if (state.sheet.date === todayMyt()) options.push(["now", "From now"]);
-  for (const t of ["12:00", "15:00", "18:00", "21:00"]) options.push([t, `From ${t}`]);
-  select.replaceChildren(...options.map(([v, label]) => new Option(label, v)));
-  select.value = options.some(([v]) => v === keep) ? keep : "";
-}
-
 /**
  * Cinema <select>: "All", "Starred only", then starred cinemas, then the rest by chain
  * (nearest first when the location is known). Keeps the current choice if it's still listed.
  */
 function fillCinemaSelect(select, keys, allLabel) {
-  const keep = new Set(chosenCinemas(select));
+  // Nothing listed yet (still loading): keep the choice, e.g. the one the movie view starts from.
+  if (!keys.length) return;
+  const keep = new Set(chosenValues(select));
   const label = (key) => {
     const km = kmLabel(kmTo(key));
     return km ? `${splitKey(key)[1]} · ${km}` : splitKey(key)[1];
@@ -519,44 +512,88 @@ function fillCinemaSelect(select, keys, allLabel) {
   }
   // Keep whatever is still listed; nothing left means all cinemas.
   const valid = new Set([...keep].filter((v) => (v === STARRED ? starred.length : keys.includes(v))));
-  setChosenCinemas(select, [...valid]);
+  setChosen(select, [...valid]);
 }
 
-/** The cinema filter's choices: [] means all cinemas; may hold STARRED and cinema keys. */
-const chosenCinemas = (select) => [...select.selectedOptions].map((o) => o.value).filter(Boolean);
+/** "All cinemas", or "All GSC cinemas" when one chain is picked. */
+const allCinemasLabel = () => {
+  const chains = selectedChains();
+  return chains.length === 1 ? `All ${chains[0]} cinemas` : "All cinemas";
+};
 
-function setChosenCinemas(select, values) {
+/** A checklist's choices ([] means "All"). Cinemas may hold STARRED and cinema keys. */
+const chosenValues = (select) => [...select.selectedOptions].map((o) => o.value).filter(Boolean);
+
+function setChosen(select, values) {
   for (const option of select.options) option.selected = values.length ? values.includes(option.value) : option.value === "";
-  select.dataset.prev = JSON.stringify(chosenCinemas(select));
+  select.dataset.prev = JSON.stringify(chosenValues(select));
 }
 
-/** After a click in the checklist: "All" clears the rest; picking any cinema unticks "All". */
-function tidyCinemaChoice(select) {
+/** After a click in a checklist: "All" clears the rest; picking anything else unticks "All". */
+function tidyChoice(select) {
   const before = new Set(JSON.parse(select.dataset.prev || "[]"));
   const allTicked = select.options[0]?.selected;
-  const now = chosenCinemas(select);
+  const now = chosenValues(select);
   const added = now.filter((v) => !before.has(v));
-  setChosenCinemas(select, allTicked && !added.length && before.size ? [] : now);
+  setChosen(select, allTicked && !added.length && before.size ? [] : now);
 }
 
 function cinemaSummary(select) {
-  const chosen = chosenCinemas(select);
-  const all = select.options[0]?.text || "All cinemas";
+  const chosen = chosenValues(select);
+  // The button leaves out the movie view's count: the schedule heading shows it.
+  const all = (select.options[0]?.text || "All cinemas").replace(/ \(\d+\)$/, "");
   if (!chosen.length) return all;
   const names = chosen.map((v) => (v === STARRED ? "★ Starred" : splitKey(v)[1]));
   return names.length === 1 ? names[0] : chosen.includes(STARRED) ? `★ Starred + ${names.length - 1}` : `${names.length} cinemas`;
 }
 
 function matchesCinema(select) {
-  const chosen = chosenCinemas(select);
+  const chosen = chosenValues(select);
   if (!chosen.length) return () => true;
   const keys = new Set(chosen);
   const starred = keys.has(STARRED);
   return (s) => keys.has(venueKey(s)) || (starred && isStarred(venueKey(s)));
 }
 
+/**
+ * Hall type <select>: "All hall types", then the types these shows have (Standard first, Kids last).
+ * Keeps the current choice if it's still listed.
+ */
+function fillHallSelect(select, shows) {
+  // Nothing listed yet (still loading): keep the choice, e.g. the one the movie view starts from.
+  if (!shows.length) return;
+  const keep = chosenValues(select);
+  const present = new Set(shows.flatMap((s) => hallTypes(s.experience)));
+  const types = sortHallTypes(present);
+  const sig = types.join("|");
+  if (select.dataset.sig !== sig) {
+    select.dataset.sig = sig;
+    select.replaceChildren(new Option("All hall types", ""), ...types.map((t) => new Option(hallLabel(t), t)));
+  }
+  setChosen(select, keep.filter((id) => present.has(id)));
+}
+
+function hallSummary(select) {
+  const chosen = chosenValues(select);
+  if (!chosen.length) return "All hall types";
+  return chosen.length === 1 ? hallLabel(chosen[0]).split(" · ")[0] : `${chosen.length} hall types`;
+}
+
+function matchesHall(select) {
+  const chosen = new Set(chosenValues(select));
+  if (!chosen.size) return () => true;
+  return (s) => hallTypes(s.experience).some((t) => chosen.has(t));
+}
+
+/** The main page's cinema and hall type filters together. */
+function matchesMain() {
+  const atCinema = matchesCinema($("cinema"));
+  const atHall = matchesHall($("hall"));
+  return (s) => atCinema(s) && atHall(s);
+}
+
 const onlyStarred = (select) => {
-  const chosen = chosenCinemas(select);
+  const chosen = chosenValues(select);
   return chosen.length === 1 && chosen[0] === STARRED;
 };
 
@@ -587,7 +624,6 @@ async function load(view = state.main) {
   const date = view.date;
   Object.assign(view, { controller, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: true, source: null });
   savePrefs();
-  if (view === state.sheet) fillAfterOptions();
 
   const chains = selectedChains();
   const region = regionOf(view);
@@ -802,17 +838,18 @@ let titlesOf = { shows: null, titles: new Map() };
 function renderGrid() {
   const view = state.main;
   const sig = JSON.stringify([
-    view.shows.length, view.cinemas.length, view.loading, chosenCinemas($("cinema")), searchText(), $("hide-concerts").checked,
+    view.shows.length, view.cinemas.length, view.loading, chosenValues($("cinema")), chosenValues($("hall")), searchText(), $("hide-concerts").checked,
     $("sort").value, todayMyt(), [...state.starred.keys()], state.here, state.places.size,
   ]);
   if (gridDrawn.shows === view.shows && gridDrawn.sig === sig) return;
   gridDrawn = { shows: view.shows, sig };
   const keys = view.cinemas.length ? view.cinemas.map(c => `${c.chain}|${c.name}`) : [...new Set(view.shows.map(venueKey))];
-  fillCinemaSelect($("cinema"), keys, "All cinemas");
-  const atCinema = matchesCinema($("cinema"));
+  fillCinemaSelect($("cinema"), keys, allCinemasLabel());
+  fillHallSelect($("hall"), view.shows);
+  const atMain = matchesMain();
   const query = searchText();
   const hideConcerts = $("hide-concerts").checked;
-  const visible = view.shows.filter(s => atCinema(s) && matchesSearch(s, query) && (!hideConcerts || !isConcert(s)));
+  const visible = view.shows.filter(s => atMain(s) && matchesSearch(s, query) && (!hideConcerts || !isConcert(s)));
   const movies = browseMovies(visible, { today: todayMyt(), sort: $("sort").value });
   // Titles come from every show (not just the visible ones), so they only change with the data.
   if (titlesOf.shows !== view.shows) titlesOf = { shows: view.shows, titles: new Map(summarizeMovies(view.shows).map(m => [m.key, m.title])) };
@@ -820,7 +857,7 @@ function renderGrid() {
   for (const movie of movies) movie.title = titles.get(movie.key) || movie.title;
   for (const m of movies) state.lastSummary.set(m.key, m);
   $("count").textContent = `${plural(movies.length, "movie")} · ${plural(new Set(visible.map(venueKey)).size, "cinema")}`;
-  $("grid").replaceChildren(...(movies.length ? movies.map(m => movieCard(m)) : [el("p", { class: "empty" }, !selectedChains().length ? "Pick GSC, TGV or both to see what's showing." : view.loading ? "Loading movies and advance sales…" : "No movies match these filters.")]));
+  $("grid").replaceChildren(...(movies.length ? movies.map(m => movieCard(m)) : [el("p", { class: "empty" }, !selectedChains().length ? "Pick GSC, TGV or both in the Cinema menu to see what's showing." : view.loading ? "Loading movies and advance sales…" : "No movies match these filters.")]));
 }
 
 /** Text for a day with nothing loaded: unpublished schedule, or a real failure. */
@@ -955,6 +992,8 @@ function renderSheet() {
     // Start from the main page's cinema choice.
     $("m-cinema").dataset.sig = "";
     $("m-cinema").replaceChildren(...[...$("cinema").selectedOptions].map((o) => new Option(o.text, o.value, true, true)));
+    $("m-hall").dataset.sig = "";
+    $("m-hall").replaceChildren(...[...$("hall").selectedOptions].map((o) => new Option(o.text, o.value, true, true)));
   } else if (summary) {
     const img = $("m-poster").querySelector("img");
     if (img) setPoster(img, summary.posters);
@@ -983,12 +1022,13 @@ function renderSheet() {
   renderDateStrip($("m-dates"), "m-date", view.date);
 
   const keys = [...new Set(all.map(venueKey))];
-  fillCinemaSelect($("m-cinema"), keys, `All cinemas (${keys.length})`);
+  fillCinemaSelect($("m-cinema"), keys, `${allCinemasLabel()} (${keys.length})`);
 
   const now = nowMyt();
-  let after = $("m-after").value;
-  if (after === "now") after = now.slice(11);
-  const shows = filterShowtimes(all, { after: after || undefined }).filter(matchesCinema($("m-cinema")));
+  fillHallSelect($("m-hall"), all);
+  const atCinema = matchesCinema($("m-cinema"));
+  const atHall = matchesHall($("m-hall"));
+  const shows = filterShowtimes(all).filter((s) => atCinema(s) && atHall(s));
 
   const group = selectedGroup();
   $("m-sort-field").hidden = group !== "cinema";
@@ -1001,7 +1041,7 @@ function renderSheet() {
   if (!shows.length) {
     const p = dateParts(view.date);
     const text = !selectedChains().length
-      ? "Pick GSC, TGV or both to see what's showing."
+      ? "Pick GSC, TGV or both in the Cinema menu to see what's showing."
       : view.loading
       ? "Loading showtimes…"
       : all.length
@@ -1060,7 +1100,7 @@ function route() {
   if (opening) {
     $("m-region").value = $("region").value;
     $("to-top").hidden = true;
-    state.sheet.date = state.pendingSheetDate || movieDates(state.main.shows, key, matchesCinema($("cinema")))[0] || todayMyt();
+    state.sheet.date = state.pendingSheetDate || movieDates(state.main.shows, key, matchesMain())[0] || todayMyt();
     state.pendingSheetDate = null;
     load(state.sheet);
     returnFocus = document.activeElement;
@@ -1090,7 +1130,8 @@ const dropdowns = [];
 function renderFilterSummary() {
   $("clear-search").hidden = !searchText();
   const parts = [regionLabel()];
-  if (chosenCinemas($("cinema")).length) parts.push(cinemaSummary($("cinema")));
+  if (chosenValues($("cinema")).length) parts.push(cinemaSummary($("cinema")));
+  if (chosenValues($("hall")).length) parts.push(hallSummary($("hall")));
   if ($("sort").value !== "shows") parts.push($("sort").selectedOptions[0].text);
   const chains = selectedChains();
   if (chains.length !== 2) parts.push(chains.length ? `${chains[0]} only` : "No chain");
@@ -1105,6 +1146,9 @@ function toggleFilters(open = !$("filters").classList.contains("open")) {
 }
 
 function render() {
+  for (const pill of document.querySelectorAll(".cselect-head [data-chain]")) {
+    pill.setAttribute("aria-pressed", String(selectedChains().includes(pill.dataset.chain)));
+  }
   renderTools();
   renderFilterSummary();
   renderStatus();
@@ -1136,12 +1180,15 @@ async function init() {
   if (Array.isArray(saved.chains) && saved.chains.length) {
     for (const box of document.querySelectorAll("input[name=chain]")) box.checked = saved.chains.includes(box.value);
   }
-  // "By time" by default; once someone picks a grouping, keep it.
+  // Grouped by time by default; once someone picks a grouping, keep it.
   if (saved.group === "cinema") document.querySelector("input[name=group][value=cinema]").checked = true;
   $("hide-concerts").checked = saved.hideConcerts !== false;
-  fillAfterOptions();
-  for (const id of ["region", "sort", "cinema", "m-region", "m-cinema", "m-after", "m-sort", "stars-region", "stars-chain"]) {
-    dropdowns.push(enhanceSelect($(id), id.endsWith("cinema") ? { summary: cinemaSummary } : {}));
+  for (const id of ["region", "sort", "cinema", "hall", "m-region", "m-cinema", "m-hall", "m-sort", "stars-region", "stars-chain"]) {
+    const options = id.endsWith("cinema") ? { summary: cinemaSummary } : id.endsWith("hall") ? { summary: hallSummary } : {};
+    // GSC / TGV pills at the top of the cinema lists.
+    if (id === "cinema") options.header = $("chains");
+    if (id === "m-cinema") options.header = $("m-chains");
+    dropdowns.push(enhanceSelect($(id), options));
   }
   tickClock();
   setInterval(tickClock, 15000);
@@ -1158,6 +1205,17 @@ async function init() {
   };
   $("region").addEventListener("change", reloadAll);
   for (const box of document.querySelectorAll("input[name=chain]")) box.addEventListener("change", reloadAll);
+  // Both cinema lists' chain pills flip the one chain setting (the hidden checkboxes), whose
+  // listeners reload both views; the movie view only has the chains the page loaded.
+  for (const id of ["chains", "m-chains"]) {
+    $(id).addEventListener("click", (e) => {
+      const pill = e.target.closest("[data-chain]");
+      if (!pill) return;
+      const box = document.querySelector(`input[name=chain][value=${pill.dataset.chain}]`);
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
   // The two date strips are independent: the movie view's date doesn't move the main page's.
 
   $("m-dates").addEventListener("change", (e) => setDate(state.sheet, e.target.value));
@@ -1169,8 +1227,8 @@ async function init() {
     panel.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     $("sheet").querySelector(".close").focus({ preventScroll: true });
   });
-  for (const id of ["cinema", "m-cinema"]) $(id).addEventListener("change", (e) => tidyCinemaChoice(e.target));
-  for (const id of ["cinema", "sort"]) $(id).addEventListener("change", render);
+  for (const id of ["cinema", "m-cinema", "hall", "m-hall"]) $(id).addEventListener("change", (e) => tidyChoice(e.target));
+  for (const id of ["cinema", "hall", "sort"]) $(id).addEventListener("change", render);
   $("hide-concerts").addEventListener("change", () => { savePrefs(); render(); });
   $("q").addEventListener("input", render);
   // Debounce analytics only; search still renders immediately. Never send the search text.
@@ -1181,10 +1239,13 @@ async function init() {
       if (searchText()) track("search_used");
     }, 800);
   });
-  for (const id of ["region", "cinema", "sort", "hide-concerts", "m-region", "m-cinema", "m-after", "m-sort"]) {
+  for (const id of ["region", "cinema", "hall", "sort", "hide-concerts", "m-region", "m-cinema", "m-hall", "m-sort"]) {
     $(id).addEventListener("change", () => track("filter_change", {
       control: id,
-      value: id.endsWith("cinema") ? (onlyStarred($(id)) ? "starred" : "selection") : id === "hide-concerts" ? String($(id).checked) : $(id).value,
+      value: id.endsWith("cinema")
+        ? (onlyStarred($(id)) ? "starred" : "selection")
+        : id.endsWith("hall") ? chosenValues($(id)).join(",") || "all"
+        : id === "hide-concerts" ? String($(id).checked) : $(id).value,
     }));
   }
   for (const input of document.querySelectorAll("input[name=chain], input[name=group]")) {
@@ -1211,7 +1272,7 @@ async function init() {
     cameFromGrid = true;
     state.pendingSheetDate = card.dataset.next || null;
   });
-  for (const id of ["m-cinema", "m-after", "m-sort"]) $(id).addEventListener("change", render);
+  for (const id of ["m-cinema", "m-hall", "m-sort"]) $(id).addEventListener("change", render);
   for (const radio of document.querySelectorAll("input[name=group]")) {
     radio.addEventListener("change", () => {
       savePrefs();
