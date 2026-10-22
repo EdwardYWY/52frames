@@ -4,8 +4,27 @@
 // Common regions both chains are mapped onto.
 export const REGIONS = ["Klang Valley", "Northern", "Southern", "East Coast", "East Malaysia"];
 
-const TAG_RE = /[([][^)\]]*[)\]]/g;
 const NON_ALNUM_RE = /[^a-z0-9]+/g;
+const TAG_RE = /[([][^)\]]*[)\]]/g;
+// Bracket tags that name the same movie, so they are dropped from the key; every other tag
+// ("(SPECIAL)", "(GUARANTEED POSTER)", "[REBROADCAST]") is a different screening and stays in it.
+// Compared without case, spaces or punctuation. Keep in sync with cinema_showtimes/models.py.
+const SAME_MOVIE_TAGS = new Set([
+  // Screen formats
+  "imax", "bed", "infinityvision",
+  // Language versions ("Jailer 2 (Tamil)")
+  "tamil", "hindi",
+  // Original-language titles ("(KINOFF26) Hello Betty (Hallo Betty)")
+  "gelbebriefe", "hallobetty", "wilmawillmehr", "zirkuskind",
+  // Part of the title ("EXO PLANET #6 - EXhOrizon [dot] in CINEMAS")
+  "dot",
+]);
+const YEAR_TAG_RE = /^(19|20)[0-9]{2}$/; // "Terbang (2026)"
+
+const isSameMovieTag = (tag) => {
+  const key = tag.slice(1, -1).toLowerCase().replace(NON_ALNUM_RE, "");
+  return SAME_MOVIE_TAGS.has(key) || YEAR_TAG_RE.test(key);
+};
 // The characters Python's str.split() treats as whitespace.
 const PY_WHITESPACE_RE = new RegExp(
   "[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+",
@@ -15,11 +34,21 @@ const isLatinWord = (word) => [...word].every((ch) => ch.codePointAt(0) <= 0x24f
 
 /**
  * Reduce a movie title to a key that matches across chains.
- * Drops "(IMAX)" / "[BED]" tags, non-Latin words (TGV appends Chinese and Tamil titles),
- * case and punctuation, so "(IMAX) Jailer 2" (GSC) and "Jailer 2" (TGV) group together.
+ * Drops same-movie tags ("(IMAX)", "(Tamil)"), non-Latin words (TGV appends Chinese and Tamil
+ * titles), case and punctuation, so "(IMAX) Jailer 2" (GSC) and "Jailer 2" (TGV) group together.
+ * Other tags are kept as words, so "(SPECIAL) Clayface" is its own movie.
  */
 export function normalizeTitle(title) {
-  const withoutTags = String(title).replace(TAG_RE, " ").toLowerCase();
+  return titleKey(String(title).replace(TAG_RE, (tag) => (isSameMovieTag(tag) ? " " : ` ${tag.slice(1, -1)} `)));
+}
+
+/** The title with every tag dropped: "(FAN SCREENING) Godzilla Minus Zero" -> "godzilla minus zero". */
+export function untaggedTitle(title) {
+  return titleKey(String(title).replace(TAG_RE, " "));
+}
+
+function titleKey(text) {
+  const withoutTags = text.toLowerCase();
   const latinWords = withoutTags.split(PY_WHITESPACE_RE).filter((w) => w && isLatinWord(w));
   return latinWords.join(" ").replace(NON_ALNUM_RE, " ").trim();
 }

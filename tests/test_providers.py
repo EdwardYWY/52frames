@@ -76,10 +76,10 @@ class GscShowtimeParsingTest(unittest.TestCase):
         self.assertEqual(late[0].experience, "IMAX")
         self.assertTrue(late[0].sold_out)
 
-    def test_title_tags_are_stripped_for_matching(self):
+    def test_special_screening_tag_stays_in_its_key(self):
         special = [s for s in self.shows if "Good Trip" in s.movie_title]
         self.assertEqual(special[0].movie_title, "(SPECIAL) Good Trip")
-        self.assertEqual(special[0].movie_key, "good trip")
+        self.assertEqual(special[0].movie_key, "special good trip")
 
     def test_empty_response_returns_no_shows(self):
         empty = '<?xml version="1.0" encoding="utf-8"?><films><filters /></films>'

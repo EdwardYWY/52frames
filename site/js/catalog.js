@@ -1,7 +1,7 @@
 // Discover dates from each chain's movie catalogue, including advance sales.
-import { GSC, createProviders, parseGscShowtimes } from './providers.js?v=23';
-import { mapLimit } from './aggregator.js?v=23';
-import { todayMyt } from './models.js?v=23';
+import { GSC, createProviders, parseGscShowtimes } from './providers.js?v=28';
+import { mapLimit } from './aggregator.js?v=28';
+import { todayMyt } from './models.js?v=28';
 
 export async function collectCatalogue({ fetch: fetchImpl = globalThis.fetch, parseXml, chains = ['GSC', 'TGV'], region = '', signal, concurrency = 4, onProgress = () => {} } = {}) {
   const providers = createProviders({ fetch: fetchImpl, parseXml });

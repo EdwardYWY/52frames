@@ -2,16 +2,16 @@
 // manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=23";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=23";
-import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=23";
-import { createProviders, domParseXml } from "./providers.js?v=24";
-import { enhanceSelect } from "./select.js?v=24";
-import { collectCatalogue } from "./catalog.js?v=23";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=23";
-import { loadSnapshot } from "./snapshot.js?v=23";
-import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=27";
-import { enableSeatPreview } from "./seatmap.js?v=26";
+import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=28";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=28";
+import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=28";
+import { createProviders, domParseXml } from "./providers.js?v=28";
+import { enhanceSelect } from "./select.js?v=28";
+import { collectCatalogue } from "./catalog.js?v=28";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=28";
+import { loadSnapshot } from "./snapshot.js?v=28";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=28";
+import { enableSeatPreview } from "./seatmap.js?v=28";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -1161,7 +1161,7 @@ function render() {
 // ---------------------------------------------------------------- wiring
 
 async function init() {
-  import("./analytics.js?v=26").then((analytics) => {
+  import("./analytics.js?v=28").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;
