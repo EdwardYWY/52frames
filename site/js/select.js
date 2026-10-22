@@ -6,6 +6,7 @@
 // button plus a listbox popup with the usual keyboard behaviour (arrows, Home/End, type to jump,
 // Enter/Space to pick, Esc to close) and ARIA roles. <select multiple> becomes a checklist.
 // On narrow screens the list opens as a bottom sheet, which is easier to use with a thumb.
+// { header } puts a node of its own controls (e.g. chain pills) at the top of the list.
 
 let openOne = null;
 let uid = 0;
@@ -30,7 +31,7 @@ window.addEventListener("scroll", (e) => {
   if (openOne && !openOne.list.contains(e.target)) openOne.place();
 }, true);
 
-export function enhanceSelect(select, { summary } = {}) {
+export function enhanceSelect(select, { summary, header } = {}) {
   const id = `cs${++uid}`;
   const root = document.createElement("span");
   root.className = `cselect${select.multiple ? " multi" : ""}`;
@@ -72,7 +73,9 @@ export function enhanceSelect(select, { summary } = {}) {
 
   function build() {
     items = [];
-    list.replaceChildren();
+    // Keep the header itself: it holds its own state and listeners.
+    for (const node of [...list.children]) if (node !== header) node.remove();
+    if (header && header.parentNode !== list) list.prepend(header);
     const add = (option, parent) => {
       const node = document.createElement("div");
       node.className = "cselect-option";
@@ -222,6 +225,7 @@ export function enhanceSelect(select, { summary } = {}) {
     }
   });
   list.addEventListener("keydown", (e) => {
+    if (header?.contains(e.target)) return;
     const keys = { ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8, Home: "first", End: "last" };
     if (e.key in keys) {
       e.preventDefault();

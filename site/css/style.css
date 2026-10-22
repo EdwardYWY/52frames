@@ -124,7 +124,6 @@ h1 { margin: 0; font: var(--w-display) clamp(40px, 8vw, 76px)/0.9 var(--f-displa
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .field { display: block; flex: 1 1 160px; min-width: 0; }
 .field-wide { flex: 2 1 240px; }
-.chains { flex: 0 0 auto; }
 
 select {
   width: 100%; height: 40px; margin: 0; padding: 0 34px 0 12px;
@@ -141,23 +140,29 @@ select:focus { outline: none; border-bottom-color: var(--accent); background: va
   pointer-events: none;
 }
 
-.toggles { display: flex; gap: 4px; }
-.toggle { position: relative; cursor: pointer; }
-.toggle input, .seg input, .day input { position: absolute; opacity: 0; pointer-events: none; }
+.seg input, .day input { position: absolute; opacity: 0; pointer-events: none; }
+/* Chain toggles (GSC / TGV buttons), at the top of both cinema lists. */
+.toggle { position: relative; cursor: pointer; margin: 0; padding: 0; border: 0; background: none; font: inherit; }
 .toggle span {
-  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px;
-  font: var(--w-display) 15px/1 var(--f-display); letter-spacing: 0.08em;
+  display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  font: var(--w-display) 13px/1 var(--f-display); letter-spacing: 0.08em;
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
 }
-.toggle span::before { content: ""; width: 10px; height: 10px; border: 2px solid currentColor; }
+.toggle span::before { content: ""; width: 8px; height: 8px; border: 2px solid currentColor; }
 .toggle.gsc { --chain: var(--gsc); }
 .toggle.tgv { --chain: var(--tgv); }
 /* Like the movie view's date chips: picked = the band with a yellow frame. */
-.toggle input:checked + span { background: var(--band); color: var(--band-ink); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
-.toggle input:checked + span::before { background: var(--chain); border-color: var(--chain); }
-.toggle input:focus-visible + span,
+.toggle[aria-pressed="true"] span { background: var(--band); color: var(--band-ink); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.toggle[aria-pressed="true"] span::before { background: var(--chain); border-color: var(--chain); }
+.toggle:focus-visible span,
 .seg input:focus-visible + span,
 .day input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cselect-head { display: none; } /* until its dropdown opens and takes it in */
+.cselect-list > .cselect-head {
+  position: sticky; top: -4px; z-index: 2; display: flex; align-items: center; gap: 6px;
+  margin-top: -4px; padding: 10px 12px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.cselect-head .label { margin: 0 auto 0 0; }
 
 /* Filters: on desktop the wrapper doesn't affect layout; on phones it folds behind a button. */
 .filters { display: contents; }
@@ -557,9 +562,6 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
   .toolbar .field-wide { flex-basis: 100%; order: 3; }
   .toolbar .field-dates { flex-basis: 100%; }
   .toolbar .field-search { flex-basis: 100%; }
-  .chains { flex: 1 1 100%; order: 4; }
-  .toggles .toggle { flex: 1; }
-  .toggle span { justify-content: center; }
   .day b { font-size: 19px; }
   .day small { font-size: 9px; letter-spacing: 0.04em; }
   .seg { flex: 1 1 100%; }
