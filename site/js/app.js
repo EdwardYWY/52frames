@@ -2,15 +2,15 @@
 // manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=23";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=23";
-import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=23";
-import { createProviders, domParseXml } from "./providers.js?v=24";
-import { enhanceSelect } from "./select.js?v=23";
-import { collectCatalogue } from "./catalog.js?v=23";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=23";
-import { loadSnapshot } from "./snapshot.js?v=23";
-import { enableSeatPreview } from "./seatmap.js?v=26";
+import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=27";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=27";
+import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=27";
+import { createProviders, domParseXml } from "./providers.js?v=27";
+import { enhanceSelect } from "./select.js?v=27";
+import { collectCatalogue } from "./catalog.js?v=27";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=27";
+import { loadSnapshot } from "./snapshot.js?v=27";
+import { enableSeatPreview } from "./seatmap.js?v=27";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -1117,7 +1117,7 @@ function render() {
 // ---------------------------------------------------------------- wiring
 
 async function init() {
-  import("./analytics.js?v=26").then((analytics) => {
+  import("./analytics.js?v=27").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;

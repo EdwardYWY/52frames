@@ -70,10 +70,10 @@ test("GSC: after-midnight show keeps its business date", () => {
   assert.equal(late[0].sold_out, true);
 });
 
-test("GSC: title tags are stripped for matching", () => {
+test("GSC: a special screening's tag stays in its key", () => {
   const special = gscShows().filter((s) => s.movie_title.includes("Good Trip"));
   assert.equal(special[0].movie_title, "(SPECIAL) Good Trip");
-  assert.equal(special[0].movie_key, "good trip");
+  assert.equal(special[0].movie_key, "special good trip");
 });
 
 test("GSC: empty response returns no shows", () => {

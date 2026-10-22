@@ -8,7 +8,10 @@ directly).
 
 - Pure Python 3.10+ standard library, so there is nothing to `pip install`.
 - Same movie from both chains is grouped together (e.g. GSC "(IMAX) Jailer 2" and TGV
-  "Jailer 2 (Tamil)").
+  "Jailer 2 (Tamil)"). Only whitelisted title tags are ignored (formats, language versions,
+  years, original titles: `SAME_MOVIE_TAGS` in `site/js/models.js` and
+  `cinema_showtimes/models.py`). Special screenings like "(GUARANTEED POSTER)" or "(SPECIAL)" keep
+  their own card.
 - Both chains are mapped onto the same regions: Klang Valley, Northern, Southern, East Coast,
   East Malaysia.
 - If one chain or cinema fails to respond, the rest still load, and you get a warning.

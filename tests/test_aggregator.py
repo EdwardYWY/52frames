@@ -35,6 +35,16 @@ class NormalizeTitleTest(unittest.TestCase):
         self.assertEqual(normalize_title("Good Trip 我阿爹想旅行"), "good trip")
         self.assertEqual(normalize_title("Jailer 2 (Tamil)"), "jailer 2")
 
+    def test_only_same_movie_tags_are_dropped(self):
+        self.assertEqual(normalize_title("Terbang (2026)"), "terbang")
+        self.assertEqual(normalize_title("(Infinity Vision) Avengers: Doomsday"), "avengers doomsday")
+        self.assertEqual(
+            normalize_title("(GUARANTEED POSTER) Godzilla Minus Zero"),
+            "guaranteed poster godzilla minus zero",
+        )
+        self.assertEqual(normalize_title("(SPECIAL) Clayface"), "special clayface")
+        self.assertEqual(normalize_title("[REBROADCAST] BTS LIVE"), "rebroadcast bts live")
+
 
 class FilterShowtimesTest(unittest.TestCase):
     def setUp(self):

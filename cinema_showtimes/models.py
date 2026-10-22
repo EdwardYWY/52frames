@@ -14,15 +14,38 @@ REGIONS = ("Klang Valley", "Northern", "Southern", "East Coast", "East Malaysia"
 
 _TAG_RE = re.compile(r"[\(\[][^\)\]]*[\)\]]")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+# Bracket tags that name the same movie, so they are dropped from the key; every other tag
+# ("(SPECIAL)", "(GUARANTEED POSTER)", "[REBROADCAST]") is a different screening and stays in it.
+# Compared without case, spaces or punctuation. Keep in sync with site/js/models.js.
+_SAME_MOVIE_TAGS = frozenset(
+    {
+        # Screen formats
+        "imax", "bed", "infinityvision",
+        # Language versions ("Jailer 2 (Tamil)")
+        "tamil", "hindi",
+        # Original-language titles ("(KINOFF26) Hello Betty (Hallo Betty)")
+        "gelbebriefe", "hallobetty", "wilmawillmehr", "zirkuskind",
+        # Part of the title ("EXO PLANET #6 - EXhOrizon [dot] in CINEMAS")
+        "dot",
+    }
+)
+_YEAR_TAG_RE = re.compile(r"(19|20)[0-9]{2}")  # "Terbang (2026)"
+
+
+def _tag_text(match: re.Match) -> str:
+    tag = match.group(0)[1:-1]
+    key = _NON_ALNUM_RE.sub("", tag.lower())
+    return " " if key in _SAME_MOVIE_TAGS or _YEAR_TAG_RE.fullmatch(key) else f" {tag} "
 
 
 def normalize_title(title: str) -> str:
     """Reduce a movie title to a key that matches across chains.
 
-    Drops format/promo tags such as ``(IMAX)`` or ``[BED]``, non-Latin words, case and punctuation,
-    so "(IMAX) Jailer 2" (GSC) and "Jailer 2" (TGV) group together.
+    Drops same-movie tags such as ``(IMAX)`` or ``(Tamil)``, non-Latin words, case and punctuation,
+    so "(IMAX) Jailer 2" (GSC) and "Jailer 2" (TGV) group together. Other tags are kept as words,
+    so "(SPECIAL) Clayface" is its own movie.
     """
-    without_tags = _TAG_RE.sub(" ", title).lower()
+    without_tags = _TAG_RE.sub(_tag_text, title).lower()
     # TGV appends Chinese/Tamil titles ("Go for Broke 2 重生2"); keep Latin-script words only.
     latin_words = [w for w in without_tags.split() if all(ord(ch) <= 0x24F for ch in w)]
     return _NON_ALNUM_RE.sub(" ", " ".join(latin_words)).strip()

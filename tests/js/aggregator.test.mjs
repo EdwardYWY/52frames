@@ -29,6 +29,14 @@ test("normalizeTitle strips tags, case and punctuation", () => {
   assert.equal(normalizeTitle("(InfinityVision) Avengers:Endgame Encore"), "avengers endgame encore");
 });
 
+test("normalizeTitle drops only same-movie tags; other tags make a separate movie", () => {
+  assert.equal(normalizeTitle("Terbang (2026)"), "terbang");
+  assert.equal(normalizeTitle("(Infinity Vision) Avengers: Doomsday"), "avengers doomsday");
+  assert.equal(normalizeTitle("(GUARANTEED POSTER) Godzilla Minus Zero"), "guaranteed poster godzilla minus zero");
+  assert.equal(normalizeTitle("(SPECIAL) Clayface"), "special clayface");
+  assert.equal(normalizeTitle("[REBROADCAST] BTS LIVE"), "rebroadcast bts live");
+});
+
 test("normalizeTitle drops non-Latin words so bilingual titles match", () => {
   assert.equal(normalizeTitle("Go for Broke 2 重生2"), "go for broke 2");
   assert.equal(normalizeTitle("Good Trip 我阿爹想旅行"), "good trip");
@@ -330,7 +338,8 @@ test("the same session listed under two TGV movie entries counts once", async ()
     makeShowtime({ ...base, movie_title: "(First Day First Showing) Jailer 2" }),
     makeShowtime({ ...base, movie_title: "Jailer 2 (Tamil)", hall: "Cinema 5", start: "2026-10-15T09:30" }),
   ];
-  assert.equal(uniqueShows(shows).length, 2);
+  // The tagged entry is kept, so the session is on the special screening's card only.
+  assert.deepEqual(uniqueShows(shows).map((s) => s.movie_title), ["(First Day First Showing) Jailer 2", "Jailer 2 (Tamil)"]);
 });
 
 test("GSC language codes and TGV language names group together", async () => {

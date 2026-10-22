@@ -2,7 +2,7 @@
 // Ports cinema_showtimes/aggregator.py, plus a sessionStorage cache for the browser.
 
 export const CONCURRENCY = 6;
-import { movieGroupKey, normalizeLanguage } from './models.js?v=23';
+import { movieGroupKey, normalizeLanguage, untaggedTitle } from './models.js?v=27';
 export const CACHE_TTL_MS = 10 * 60 * 1000;
 // Bump when the cached shape of a showtime changes.
 const CACHE_PREFIX = "showtimes:v3:";
@@ -311,14 +311,17 @@ export async function collectShowtimes(
 
 /**
  * Drop repeats of the same session. TGV sometimes lists one session under two movie entries
- * (e.g. "Jailer 2 (Tamil)" and "(First Day First Showing) Jailer 2"), which group as one movie.
+ * (e.g. "Jailer 2 (Tamil)" and "(FANS) Jailer 2"); the tagged entry is kept, so a special
+ * screening shows on its own card and not again on the regular one.
  */
 export function uniqueShows(shows) {
-  const seen = new Set();
-  return shows.filter((s) => {
-    const key = [s.chain, s.cinema_id, s.cinema_name, s.start, s.hall, s.experience, movieGroupKey(s)].join("|");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+  const titles = new Map(); // movie_title -> untagged title; a few hundred titles across ~20k shows
+  const untagged = (title) => titles.get(title) ?? titles.set(title, untaggedTitle(title)).get(title);
+  const keys = shows.map((s) => [s.chain, s.cinema_id, s.cinema_name, s.start, s.hall, s.experience, untagged(s.movie_title), normalizeLanguage(s.language)].join("|"));
+  const best = new Map();
+  shows.forEach((s, i) => {
+    const kept = best.get(keys[i]);
+    if (!kept || s.movie_key.length > kept.movie_key.length) best.set(keys[i], s);
   });
+  return shows.filter((s, i) => best.get(keys[i]) === s);
 }
