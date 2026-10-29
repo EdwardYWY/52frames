@@ -5,6 +5,7 @@ const EVENTS = {
   search_used: [],
   filter_change: ["control", "value"],
   cinema_star: ["chain", "action"],
+  cinema_open: ["chain"],
   stars_open: [],
   stars_clear: [],
   location_toggle: ["action"],

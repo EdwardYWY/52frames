@@ -1,4 +1,4 @@
-import { summarizeMovies } from './aggregator.js?v=28';
+import { summarizeMovies } from './aggregator.js?v=29';
 
 export const isConcert = show => [...(show.genres || []), ...(show.tags || [])].some(label => /\bconcerts?\b/i.test(label));
 export const overnightLabel = show => `${show.start.slice(11, 16)}${show.start.slice(0, 10) > show.business_date ? ' +1' : ''}`;

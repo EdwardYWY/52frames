@@ -7,6 +7,7 @@
 // Enter/Space to pick, Esc to close) and ARIA roles. <select multiple> becomes a checklist.
 // On narrow screens the list opens as a bottom sheet, which is easier to use with a thumb.
 // { header } puts a node of its own controls (e.g. chain pills) at the top of the list.
+// { search: "Placeholder" } adds a search box there that narrows the list as you type.
 
 let openOne = null;
 let uid = 0;
@@ -31,7 +32,10 @@ window.addEventListener("scroll", (e) => {
   if (openOne && !openOne.list.contains(e.target)) openOne.place();
 }, true);
 
-export function enhanceSelect(select, { summary, header } = {}) {
+/** Option text as searched: case, stars and punctuation don't matter. */
+const searchable = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+export function enhanceSelect(select, { summary, header, search } = {}) {
   const id = `cs${++uid}`;
   const root = document.createElement("span");
   root.className = `cselect${select.multiple ? " multi" : ""}`;
@@ -64,18 +68,41 @@ export function enhanceSelect(select, { summary, header } = {}) {
   list.hidden = true;
   root.append(list);
 
+  // The header and search box stay pinned at the top of the list while it scrolls.
+  const top = document.createElement("div");
+  top.className = "cselect-top";
+  let input = null;
+  if (search) {
+    const box = document.createElement("span");
+    box.className = "cselect-search";
+    input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = search;
+    input.spellcheck = false;
+    input.autocomplete = "off";
+    input.setAttribute("enterkeyhint", "done");
+    input.setAttribute("aria-label", search);
+    input.setAttribute("aria-controls", list.id);
+    box.append(input);
+    top.append(box);
+  }
+  const noMatch = document.createElement("div");
+  noMatch.className = "cselect-none";
+  noMatch.hidden = true;
+
   let items = []; // [{ option, node }]
   let active = -1;
   let typed = "";
   let typedAt = 0;
 
-  const enabledItems = () => items.filter((i) => !i.option.disabled);
+  const enabledItems = () => items.filter((i) => !i.option.disabled && !i.node.hidden);
 
   function build() {
     items = [];
-    // Keep the header itself: it holds its own state and listeners.
-    for (const node of [...list.children]) if (node !== header) node.remove();
-    if (header && header.parentNode !== list) list.prepend(header);
+    // Keep the header and search box themselves: they hold their own state and listeners.
+    for (const node of [...list.children]) if (node !== top) node.remove();
+    if (header && header.parentNode !== top) top.prepend(header);
+    if (top.children.length && top.parentNode !== list) list.prepend(top);
     const add = (option, parent) => {
       const node = document.createElement("div");
       node.className = "cselect-option";
@@ -100,7 +127,27 @@ export function enhanceSelect(select, { summary, header } = {}) {
         list.append(group);
       } else if (child.tagName === "OPTION") add(child, list);
     }
+    list.append(noMatch);
+    narrow();
     mark();
+  }
+
+  /** Hide the options (and whole groups) that don't match the search box. A group's name matches all of it. */
+  function narrow() {
+    const query = input ? searchable(input.value) : "";
+    let shown = 0;
+    for (const { option, node } of items) {
+      const group = option.parentNode.tagName === "OPTGROUP" ? searchable(option.parentNode.label) : "";
+      node.hidden = Boolean(query) && !searchable(option.text).includes(query) && !group.includes(query);
+      if (!node.hidden) shown++;
+    }
+    for (const group of list.querySelectorAll(":scope > [role=group]")) {
+      group.hidden = ![...group.querySelectorAll(".cselect-option")].some((n) => !n.hidden);
+    }
+    noMatch.hidden = shown > 0;
+    noMatch.textContent = `No match for “${input?.value.trim() || ""}”`;
+    // Keep the highlight on something you can see.
+    if (items[active]?.node.hidden) active = items.indexOf(enabledItems()[0] ?? null);
   }
 
   function mark() {
@@ -109,10 +156,11 @@ export function enhanceSelect(select, { summary, header } = {}) {
       node.classList.toggle("active", i === active);
     });
     const node = items[active]?.node;
-    if (node) {
-      list.setAttribute("aria-activedescendant", node.id);
-      node.scrollIntoView({ block: "nearest" });
-    } else list.removeAttribute("aria-activedescendant");
+    for (const owner of input ? [list, input] : [list]) {
+      if (node) owner.setAttribute("aria-activedescendant", node.id);
+      else owner.removeAttribute("aria-activedescendant");
+    }
+    node?.scrollIntoView({ block: "nearest" });
   }
 
   function sync() {
@@ -148,6 +196,7 @@ export function enhanceSelect(select, { summary, header } = {}) {
     if (!list.hidden || select.disabled) return;
     closeOpen();
     openOne = api;
+    if (input) input.value = "";
     build();
     list.hidden = false;
     root.classList.add("open");
@@ -155,7 +204,9 @@ export function enhanceSelect(select, { summary, header } = {}) {
     active = Math.max(0, items.findIndex((i) => i.option.selected));
     place();
     mark();
-    list.focus({ preventScroll: true });
+    // Phones: focusing the search box would bring up the keyboard over the list, so wait for a tap.
+    if (input && !root.classList.contains("is-sheet")) input.focus({ preventScroll: true });
+    else list.focus({ preventScroll: true });
     if (root.classList.contains("is-sheet")) {
       history.pushState(history.state, "");
       inHistory = api;
@@ -210,7 +261,32 @@ export function enhanceSelect(select, { summary, header } = {}) {
   });
   // The dropdown usually sits inside a <label>: stop clicks here from also "activating" the label,
   // which would move focus to the hidden native <select>. Keep focus on the list while picking.
-  list.addEventListener("mousedown", (e) => e.preventDefault());
+  list.addEventListener("mousedown", (e) => {
+    if (e.target !== input) e.preventDefault();
+  });
+  input?.addEventListener("input", () => {
+    narrow();
+    mark();
+  });
+  input?.addEventListener("keydown", (e) => {
+    const keys = { ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8 };
+    if (e.key in keys) {
+      e.preventDefault();
+      move(keys[e.key]);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      choose(active);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      // First Esc clears the search, the next one closes.
+      if (input.value) {
+        input.value = "";
+        narrow();
+        mark();
+      } else close();
+    } else if (e.key === "Tab") close(false);
+  });
   list.addEventListener("click", (e) => {
     e.preventDefault();
     const node = e.target.closest(".cselect-option");
@@ -225,7 +301,7 @@ export function enhanceSelect(select, { summary, header } = {}) {
     }
   });
   list.addEventListener("keydown", (e) => {
-    if (header?.contains(e.target)) return;
+    if (top.contains(e.target)) return;
     const keys = { ArrowDown: 1, ArrowUp: -1, PageDown: 8, PageUp: -8, Home: "first", End: "last" };
     if (e.key in keys) {
       e.preventDefault();
@@ -239,6 +315,9 @@ export function enhanceSelect(select, { summary, header } = {}) {
       close();
     } else if (e.key === "Tab") {
       close(false);
+    } else if (input && e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+      // Typing goes to the search box.
+      input.focus({ preventScroll: true });
     } else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
       // Type to jump to an option starting with the typed letters.
       typed = Date.now() - typedAt > 700 ? e.key.toLowerCase() : typed + e.key.toLowerCase();
