@@ -505,8 +505,8 @@ function renderPickStrip(strip, name, dates) {
 }
 
 /**
- * Date strips scroll sideways without a scrollbar: ‹ › buttons at the ends, shown when there are
- * more dates that way, and the mouse wheel scrolls them on a computer.
+ * Date strips scroll sideways without a scrollbar: ‹ › buttons beside the strip when its dates
+ * don't all fit (dimmed at an end), and the mouse wheel scrolls them on a computer.
  */
 const stripUpdates = [];
 function enhanceStrip(strip) {
@@ -514,15 +514,16 @@ function enhanceStrip(strip) {
   strip.before(wrap);
   const nav = (dir, label, glyph) =>
     el("button", {
-      type: "button", class: `strip-nav ${dir}`, "aria-label": label, tabindex: "-1", hidden: true,
+      type: "button", class: `strip-nav ${dir}`, "aria-label": label, tabindex: "-1",
       onclick: () => strip.scrollBy({ left: (dir === "prev" ? -0.8 : 0.8) * strip.clientWidth, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }),
     }, el("span", { "aria-hidden": "true" }, glyph));
   const prev = nav("prev", "Earlier dates", "‹");
   const next = nav("next", "Later dates", "›");
   wrap.append(prev, strip, next);
   const update = () => {
-    prev.hidden = strip.scrollLeft <= 1;
-    next.hidden = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+    wrap.classList.toggle("scrolls", strip.scrollWidth > strip.clientWidth + 1);
+    prev.disabled = strip.scrollLeft <= 1;
+    next.disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
   };
   strip.addEventListener("scroll", update, { passive: true });
   new ResizeObserver(update).observe(strip);
