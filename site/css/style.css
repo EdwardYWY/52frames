@@ -567,7 +567,8 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
   .filters-summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
   .filters-toggle .chev { flex: none; }
   .filters-toggle[aria-expanded="true"] .chev { transform: rotate(-135deg); margin-top: 4px; }
-  .filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; flex: 1 1 100%; }
+  /* min-width 0: the date strip inside scrolls sideways instead of widening the page. */
+  .filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; flex: 1 1 100%; min-width: 0; }
   .filters:not(.open) { display: none; }
   /* Keep the pinned movie header short so it never crowds the schedule. */
   .m-head .close { padding: 0 10px; gap: 6px; }
@@ -675,7 +676,7 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
 
 .v-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 16px; padding: 22px 0 16px; }
 .v-head .close { position: static; text-decoration: none; }
-.v-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.v-title { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .v-title > span { display: flex; align-items: center; gap: 8px; flex: none; }
 .v-title h1 { font-size: clamp(26px, 4.6vw, 46px); line-height: 1.05; overflow-wrap: anywhere; min-width: 0; }
 .v-meta { grid-column: 2; margin: 0; color: var(--ink-2); }

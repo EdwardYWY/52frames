@@ -1401,11 +1401,12 @@ function reloadAll() {
 
 const dropdowns = [];
 
-/** What the folded filter button says on phones: only what differs from the defaults. */
+/** What the folded filter buttons say on phones: the date, then only what differs from the defaults. */
 function renderFilterSummary() {
   $("clear-search").hidden = !searchText();
   $("c-clear-search").hidden = !cinemaQuery();
-  const parts = [regionLabel()];
+  const date = state.date ? shortDate(state.date) : "All dates";
+  const parts = [date, regionLabel()];
   if (chosenValues($("cinema")).length) parts.push(cinemaSummary($("cinema")));
   if (chosenValues($("hall")).length) parts.push(hallSummary($("hall")));
   if ($("sort").value !== "shows") parts.push($("sort").selectedOptions[0].text);
@@ -1414,11 +1415,20 @@ function renderFilterSummary() {
   parts.push($("hide-concerts").checked ? "Concerts hidden" : "Concerts included");
   if (searchText()) parts.push(`“${searchText()}”`);
   $("filters-summary").textContent = parts.join(" · ");
+
+  const cinemaParts = [date, regionLabel()];
+  if (chains.length !== 2) cinemaParts.push(chains.length ? `${chains[0]} only` : "No chain");
+  if ($("c-sort").value !== "name") cinemaParts.push($("c-sort").selectedOptions[0].text);
+  if (cinemaQuery()) cinemaParts.push(`“${cinemaQuery()}”`);
+  $("c-filters-summary").textContent = cinemaParts.join(" · ");
 }
 
-function toggleFilters(open = !$("filters").classList.contains("open")) {
-  $("filters").classList.toggle("open", open);
-  $("filters-toggle").setAttribute("aria-expanded", String(open));
+/** Fold or unfold a page's filters on phones ("" for the movies page, "c-" for the cinema list). */
+function toggleFilters(open, prefix = "") {
+  const box = $(`${prefix}filters`);
+  open ??= !box.classList.contains("open");
+  box.classList.toggle("open", open);
+  $(`${prefix}filters-toggle`).setAttribute("aria-expanded", String(open));
 }
 
 function render() {
@@ -1556,6 +1566,7 @@ function init() {
     $("q").focus();
   });
   $("filters-toggle").addEventListener("click", () => toggleFilters());
+  $("c-filters-toggle").addEventListener("click", () => toggleFilters(undefined, "c-"));
   $("q").addEventListener("keydown", (e) => {
     if (e.key === "Escape" && $("q").value) {
       e.stopPropagation();
@@ -1627,7 +1638,10 @@ function init() {
       if (state.page === "movies") {
         toggleFilters(true);
         $("q").focus();
-      } else $("cq").focus();
+      } else {
+        toggleFilters(true, "c-");
+        $("cq").focus();
+      }
       return;
     }
     if (e.key !== "Escape") return;

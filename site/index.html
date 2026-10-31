@@ -44,12 +44,12 @@
   </section>
 
   <form class="toolbar" id="toolbar" autocomplete="off" role="search">
-    <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="dates" role="radiogroup" aria-label="Date"></div></div>
     <button type="button" class="filters-toggle" id="filters-toggle" aria-expanded="false" aria-controls="filters">
       <span class="filters-title">Filters</span><span class="filters-summary" id="filters-summary"></span>
       <span class="chev" aria-hidden="true"></span>
     </button>
     <div class="filters" id="filters">
+      <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="dates" role="radiogroup" aria-label="Date"></div></div>
       <label class="field field-search">
         <span class="label">Search movies</span>
         <span class="search-box">
@@ -114,28 +114,34 @@
   </section>
 
   <form class="toolbar" id="c-toolbar" autocomplete="off" role="search">
-    <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="c-dates" role="radiogroup" aria-label="Date"></div></div>
-    <label class="field field-search">
-      <span class="label">Search cinemas</span>
-      <span class="search-box">
-        <input type="search" id="cq" placeholder="Cinema, mall or town" enterkeyhint="search" spellcheck="false">
-        <kbd class="search-key mono" aria-hidden="true">/</kbd>
-        <button type="button" class="search-clear" id="c-clear-search" aria-label="Clear cinema search" hidden><span aria-hidden="true">×</span></button>
-      </span>
-    </label>
-    <label class="field"><span class="label">Region</span><span class="select"><select id="c-region"></select></span></label>
-    <div class="field chain-field" id="c-chains" role="group" aria-label="Chain">
-      <span class="label">Chain</span>
-      <span class="chain-pills">
-        <button type="button" class="toggle gsc" data-chain="GSC" aria-pressed="true"><span>GSC</span></button>
-        <button type="button" class="toggle tgv" data-chain="TGV" aria-pressed="true"><span>TGV</span></button>
-      </span>
+    <button type="button" class="filters-toggle" id="c-filters-toggle" aria-expanded="false" aria-controls="c-filters">
+      <span class="filters-title">Filters</span><span class="filters-summary" id="c-filters-summary"></span>
+      <span class="chev" aria-hidden="true"></span>
+    </button>
+    <div class="filters" id="c-filters">
+      <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="c-dates" role="radiogroup" aria-label="Date"></div></div>
+      <label class="field field-search">
+        <span class="label">Search cinemas</span>
+        <span class="search-box">
+          <input type="search" id="cq" placeholder="Cinema, mall or town" enterkeyhint="search" spellcheck="false">
+          <kbd class="search-key mono" aria-hidden="true">/</kbd>
+          <button type="button" class="search-clear" id="c-clear-search" aria-label="Clear cinema search" hidden><span aria-hidden="true">×</span></button>
+        </span>
+      </label>
+      <label class="field"><span class="label">Region</span><span class="select"><select id="c-region"></select></span></label>
+      <div class="field chain-field" id="c-chains" role="group" aria-label="Chain">
+        <span class="label">Chain</span>
+        <span class="chain-pills">
+          <button type="button" class="toggle gsc" data-chain="GSC" aria-pressed="true"><span>GSC</span></button>
+          <button type="button" class="toggle tgv" data-chain="TGV" aria-pressed="true"><span>TGV</span></button>
+        </span>
+      </div>
+      <label class="field"><span class="label">Sort</span>
+        <span class="select"><select id="c-sort">
+          <option value="name">Name A–Z</option><option value="near">Nearest</option><option value="movies">Most movies</option>
+        </select></span>
+      </label>
     </div>
-    <label class="field"><span class="label">Sort</span>
-      <span class="select"><select id="c-sort">
-        <option value="name">Name A–Z</option><option value="near">Nearest</option><option value="movies">Most movies</option>
-      </select></span>
-    </label>
   </form>
 
   <div class="active-filters" id="c-active-filters" hidden></div>
