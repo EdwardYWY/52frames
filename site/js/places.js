@@ -54,6 +54,16 @@ export const TGV_LOCATIONS = {
   "VIV": [1.5268, 110.3693], // Vivacity Kuching
 };
 
+// GSC premium halls that GSC lists as cinemas of their own, under the same location id as the
+// cinema they're in. The site shows them as halls of that cinema (hall type Prestige / Premiere),
+// like its 4DX or IMAX halls. Only these, by GSC hall group: a new one stays its own cinema until
+// it's added here.
+export const GSC_PREMIUM_HALL_GROUPS = new Set([
+  "PRESTIGE_1U2", // GSC HLB Prestige - 1 Utama (New Wing)
+  "PMPLUS_IC2", // GSC Premiere - IOI City Mall 2 (East)
+  "PMPLUS_PJB", // GSC Premiere - Paradigm JB
+]);
+
 // TGV cinema names in GSC's "Town - Mall" style, by TGV cinema id. TGV's own names are
 // "TGV <mall>" (the chain badge already says TGV) and some carry "(New)". Mall names were checked
 // against OpenStreetMap when the coordinates above were looked up.

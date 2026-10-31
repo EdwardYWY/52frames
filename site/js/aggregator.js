@@ -2,7 +2,7 @@
 // Ports cinema_showtimes/aggregator.py, plus a sessionStorage cache for the browser.
 
 export const CONCURRENCY = 6;
-import { movieGroupKey, normalizeLanguage, untaggedTitle } from './models.js?v=29';
+import { movieGroupKey, normalizeLanguage, untaggedTitle } from './models.js?v=30';
 export const CACHE_TTL_MS = 10 * 60 * 1000;
 // Bump when the cached shape of a showtime changes.
 const CACHE_PREFIX = "showtimes:v3:";

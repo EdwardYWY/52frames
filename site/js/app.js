@@ -2,16 +2,16 @@
 // sheet with its schedule, and a panel to manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=29";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=29";
-import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=29";
-import { createProviders, domParseXml } from "./providers.js?v=29";
-import { enhanceSelect } from "./select.js?v=29";
-import { collectCatalogue } from "./catalog.js?v=29";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=29";
-import { loadSnapshot } from "./snapshot.js?v=29";
-import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=29";
-import { enableSeatPreview } from "./seatmap.js?v=29";
+import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=30";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=30";
+import { GSC_PREMIUM_HALL_GROUPS, TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=30";
+import { createProviders, domParseXml } from "./providers.js?v=30";
+import { enhanceSelect } from "./select.js?v=30";
+import { collectCatalogue } from "./catalog.js?v=30";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=30";
+import { loadSnapshot } from "./snapshot.js?v=30";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=30";
+import { enableSeatPreview } from "./seatmap.js?v=30";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -190,6 +190,36 @@ function readStars() {
 }
 state.starred = readStars();
 
+// ---------------------------------------------------------------- premium halls
+
+/** A premium hall's own cinema name -> the cinema it's in and its hall group, learned from each cinema list. */
+const premiumHalls = new Map();
+const isPremiumHall = (c) => c.chain === "GSC" && GSC_PREMIUM_HALL_GROUPS.has(c.hall_group);
+
+/** The cinemas to list: premium halls (places.js) left out, after noting which cinema each is in. */
+function foldCinemas(cinemas) {
+  for (const hall of cinemas.filter(isPremiumHall)) {
+    const parent = cinemas.find((c) => c.chain === "GSC" && c.cinema_id === hall.cinema_id && !c.hall_group);
+    if (!parent) continue; // its cinema isn't listed: keep the hall as a cinema
+    premiumHalls.set(hall.name, { parent: parent.name, hall_group: hall.hall_group });
+    // A star on the hall moves to its cinema.
+    if (state.starred.delete(`GSC|${hall.name}`)) {
+      state.starred.set(`GSC|${parent.name}`, { chain: "GSC", name: parent.name, region: parent.region });
+      saveStars();
+    }
+  }
+  return cinemas.filter((c) => !(c.chain === "GSC" && premiumHalls.has(c.name)));
+}
+
+/** Shows in a premium hall, moved to the cinema it's in. They keep the hall group: GSC's seat maps and prices need it. */
+function foldShows(shows) {
+  if (!premiumHalls.size) return shows;
+  return shows.map((s) => {
+    const hall = s.chain === "GSC" && premiumHalls.get(s.cinema_name);
+    return hall ? { ...s, cinema_name: hall.parent, hall_group: hall.hall_group } : s;
+  });
+}
+
 function nowMyt() {
   const d = new Date(Date.now() + 8 * 3600 * 1000);
   return `${d.toISOString().slice(0, 10)}T${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
@@ -353,7 +383,7 @@ async function allCinemas() {
       }
     }),
   );
-  return lists.flat();
+  return foldCinemas(lists.flat());
 }
 
 let starsCinemas = null;
@@ -734,8 +764,8 @@ async function load(view = state.main) {
       const result = await collectCatalogue({ parseXml: domParseXml, chains, region, signal: controller.signal,
         onProgress: progress => { if (current()) { view.progress = progress; scheduleRender(); } } });
       if (!current()) return;
-      view.shows = result.showtimes;
-      view.cinemas = result.cinemas;
+      view.cinemas = foldCinemas(result.cinemas);
+      view.shows = foldShows(result.showtimes);
       view.errors = result.errors;
       rememberCinemaPlaces(view.cinemas);
       rememberPlaces(view.shows);
@@ -760,12 +790,12 @@ async function load(view = state.main) {
       signal: controller.signal,
       onCinemas: (cinemas) => {
         if (!current()) return;
-        view.cinemas = cinemas;
-        rememberCinemaPlaces(cinemas);
+        view.cinemas = foldCinemas(cinemas);
+        rememberCinemaPlaces(view.cinemas);
       },
       onShowtimes: (shows) => {
         if (!current()) return;
-        view.shows.push(...shows);
+        view.shows.push(...foldShows(shows));
         rememberPlaces(shows);
         scheduleRender();
       },
@@ -805,7 +835,9 @@ function finishLoad(view) {
 }
 
 let snapshotPromise = null;
-const snapshotOnce = () => (snapshotPromise ??= loadSnapshot());
+// Premium halls are folded into their cinemas once, as the snapshot arrives.
+const snapshotOnce = () =>
+  (snapshotPromise ??= loadSnapshot().then((snap) => snap && { ...snap, cinemas: foldCinemas(snap.cinemas), showtimes: foldShows(snap.showtimes) }));
 
 let renderQueued = false;
 function scheduleRender() {
@@ -1138,7 +1170,8 @@ function allowSeatPreview(node, show) {
 /** A show's live seats or prices. GSC's premium halls need the cinema's hall group. */
 function fetchSeatData(show, signal, method) {
   const cinema = [...state.sheet.cinemas, ...state.main.cinemas, ...(state.snap?.cinemas || [])].find((c) => c.chain === show.chain && c.name === show.cinema_name);
-  return providers[show.chain][method]({ ...show, hall_group: cinema?.hall_group || "" }, signal);
+  // A premium hall's show carries its own hall group (foldShows); other shows take their cinema's.
+  return providers[show.chain][method]({ ...show, hall_group: show.hall_group ?? cinema?.hall_group ?? "" }, signal);
 }
 let seatPreview = null;
 
@@ -1481,7 +1514,7 @@ function render() {
 // ---------------------------------------------------------------- wiring
 
 function init() {
-  import("./analytics.js?v=29").then((analytics) => {
+  import("./analytics.js?v=30").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;
