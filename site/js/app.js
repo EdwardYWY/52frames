@@ -1,17 +1,17 @@
-// Page code: a poster grid of what's showing, a movie sheet with its schedule, and a panel to
-// manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
+// Page code: a poster grid of what's showing, a list of cinemas and a page per cinema, a movie
+// sheet with its schedule, and a panel to manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=28";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=28";
-import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=28";
-import { createProviders, domParseXml } from "./providers.js?v=28";
-import { enhanceSelect } from "./select.js?v=28";
-import { collectCatalogue } from "./catalog.js?v=28";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=28";
-import { loadSnapshot } from "./snapshot.js?v=28";
-import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=28";
-import { enableSeatPreview } from "./seatmap.js?v=28";
+import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=29";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=29";
+import { TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=29";
+import { createProviders, domParseXml } from "./providers.js?v=29";
+import { enhanceSelect } from "./select.js?v=29";
+import { collectCatalogue } from "./catalog.js?v=29";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=29";
+import { loadSnapshot } from "./snapshot.js?v=29";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=29";
+import { enableSeatPreview } from "./seatmap.js?v=29";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -54,6 +54,11 @@ const newView = (date) => ({ date, shows: [], cinemas: [], errors: [], progress:
 
 const state = {
   main: newView(todayMyt()),
+  // The movies grid, the cinema list and the cinema pages share one date: "" is every date.
+  date: "",
+  page: "movies", // "movies", "cinemas" or "cinema" (under the movie sheet, when one is open)
+  cinemaKey: null, // venue key of the cinema page
+  snap: null, // the shared snapshot once loaded: every region and chain, for the cinema pages
   sheet: newView(todayMyt()),
   pendingSheetDate: null, // a search result opens the movie on the day it next shows
   movieKey: null, // open movie, or null for the grid
@@ -97,11 +102,12 @@ const indexes = new WeakMap();
 function indexOf(shows) {
   let index = indexes.get(shows);
   if (!index || index.size !== shows.length) {
-    index = { size: shows.length, byMovie: new Map(), byDay: new Map() };
+    index = { size: shows.length, byMovie: new Map(), byDay: new Map(), byVenue: new Map() };
     const add = (map, key, show) => (map.get(key) || map.set(key, []).get(key)).push(show);
     for (const show of shows) {
       add(index.byMovie, movieGroupKey(show), show);
       add(index.byDay, show.business_date, show);
+      add(index.byVenue, venueKey(show), show);
     }
     indexes.set(shows, index);
   }
@@ -111,6 +117,18 @@ function indexOf(shows) {
 /** The booking dates a movie has in `shows`, among those passing `keep`, in order. */
 const movieDates = (shows, key, keep) => [...new Set((indexOf(shows).byMovie.get(key) || []).filter(keep).map((s) => s.business_date))].sort();
 
+/** The booking dates in `shows` from today on. */
+const upcomingDates = (shows) => [...indexOf(shows).byDay.keys()].filter((d) => d >= todayMyt()).sort();
+
+/** The shows on the shared date, or from today on when it's "All". */
+function onPickedDate(shows) {
+  if (state.date) return indexOf(shows).byDay.get(state.date) || [];
+  const today = todayMyt();
+  return shows.filter((s) => s.business_date >= today);
+}
+
+/** Text as searched: case, stars and punctuation don't matter. */
+const looseText = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 // TGV cinemas used to be named "TGV <mall>"; stars saved under those names move to the new ones.
 const OLD_TGV_IDS = {
   "Tgv Ksl Klang (New)": "KSL",
@@ -201,16 +219,6 @@ function formatDateParts(iso) {
   };
 }
 
-function savePrefs() {
-  writeLocal("showtimes:prefs", {
-    area: $("region").value,
-    chains: selectedChains(),
-    group: selectedGroup(),
-    location: Boolean(state.here),
-    hideConcerts: $("hide-concerts").checked,
-  });
-}
-
 const selectedChains = () => [...document.querySelectorAll("input[name=chain]:checked")].map((c) => c.value);
 const selectedGroup = () => document.querySelector("input[name=group]:checked")?.value || "time";
 const regionLabel = (select = $("region")) => select.selectedOptions[0].text;
@@ -256,7 +264,7 @@ function locate() {
       state.locating = false;
       state.here = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       if ($("m-sort").value === "time") $("m-sort").value = "near";
-      savePrefs();
+      if ($("c-sort").value === "name") $("c-sort").value = "near";
       render();
     },
     (err) => {
@@ -264,7 +272,6 @@ function locate() {
       state.here = null;
       state.locationError =
         err.code === err.PERMISSION_DENIED ? "Location is blocked for this site in your browser settings." : "Couldn't get your location.";
-      savePrefs();
       render();
     },
     { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 },
@@ -276,7 +283,7 @@ function toggleLocation() {
   if (state.here) {
     state.here = null;
     if ($("m-sort").value === "near") $("m-sort").value = "time";
-    savePrefs();
+    if ($("c-sort").value === "near") $("c-sort").value = "name";
     render();
   } else {
     locate();
@@ -452,7 +459,7 @@ function posterFrame(summary, sizes) {
 const regionOf = (view) => (view === state.sheet ? $("m-region") : $("region")).value;
 const emptyKey = (view) => `${view.date}|${regionOf(view)}`;
 function renderDateStrip(strip, name, date) {
-  const dates = movieDates(state.main.shows, state.movieKey, matchesMain());
+  const dates = movieDates(state.main.shows, state.movieKey, matchesSheetStart());
   if (!dates.includes(date)) dates.push(date);
   dates.sort();
   strip.replaceChildren(...dates.map(iso => {
@@ -461,6 +468,41 @@ function renderDateStrip(strip, name, date) {
       el("input", { type: "radio", name, value: iso, checked: iso === date }),
       el("span", {}, el("small", {}, iso === todayMyt() ? "Today" : p.weekday), el("b", {}, String(p.day)), el("small", { class: "day-month" }, p.month)));
   }));
+}
+
+/** A shared date strip: "All", then `dates`. Rebuilt only when the dates change, so focus stays put. */
+function renderPickStrip(strip, name, dates) {
+  if (state.date && !dates.includes(state.date)) dates = [...dates, state.date].sort();
+  const today = todayMyt();
+  const sig = `${today}|${dates.join(",")}`;
+  if (strip.dataset.sig !== sig) {
+    strip.dataset.sig = sig;
+    strip.replaceChildren(
+      el("label", { class: "day day-all", title: "Every date" },
+        el("input", { type: "radio", name, value: "" }),
+        el("span", {}, el("small", {}, "Every"), el("b", {}, "All"), el("small", { class: "day-month" }, "date"))),
+      ...dates.map((iso) => {
+        const p = dateParts(iso);
+        return el("label", { class: "day", title: p.long },
+          el("input", { type: "radio", name, value: iso }),
+          el("span", {}, el("small", {}, iso === today ? "Today" : p.weekday), el("b", {}, String(p.day)), el("small", { class: "day-month" }, p.month)));
+      }),
+    );
+  }
+  for (const input of strip.querySelectorAll("input")) input.checked = input.value === state.date;
+}
+
+function pickDate(iso) {
+  if (iso === state.date) return;
+  state.date = iso;
+  track("filter_change", { control: "date", value: iso ? "day" : "all" });
+  render();
+}
+
+/** "Thu 29 Oct", or "Today 29 Oct". */
+function shortDate(iso) {
+  const p = dateParts(iso);
+  return `${iso === todayMyt() ? "Today" : p.weekday} ${p.day} ${p.month}`;
 }
 
 function setDate(view, iso) {
@@ -592,6 +634,9 @@ function matchesMain() {
   return (s) => atCinema(s) && atHall(s);
 }
 
+/** The movie view's dates follow the movies grid's filters, unless it opened from a cinema page. */
+const matchesSheetStart = () => (state.page === "movies" ? matchesMain() : () => true);
+
 const onlyStarred = (select) => {
   const chosen = chosenValues(select);
   return chosen.length === 1 && chosen[0] === STARRED;
@@ -610,9 +655,11 @@ function renderTools() {
   button.title = state.locationError || (state.here ? "Distances shown. Click to turn off." : "Show distance from where you are");
   button.classList.toggle("err", Boolean(state.locationError));
   $("star-count").textContent = state.starred.size ? String(state.starred.size) : "";
-  const near = $("m-sort").querySelector("option[value=near]");
-  near.disabled = !state.here;
-  near.textContent = state.here ? "Nearest" : "Nearest (turn on location)";
+  for (const id of ["m-sort", "c-sort"]) {
+    const near = $(id).querySelector("option[value=near]");
+    near.disabled = !state.here;
+    near.textContent = state.here ? "Nearest" : "Nearest (turn on location)";
+  }
 }
 
 // ---------------------------------------------------------------- loading
@@ -623,7 +670,6 @@ async function load(view = state.main) {
   const current = () => view.controller === controller;
   const date = view.date;
   Object.assign(view, { controller, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: true, source: null });
-  savePrefs();
 
   const chains = selectedChains();
   const region = regionOf(view);
@@ -839,7 +885,7 @@ function renderGrid() {
   const view = state.main;
   const sig = JSON.stringify([
     view.shows.length, view.cinemas.length, view.loading, chosenValues($("cinema")), chosenValues($("hall")), searchText(), $("hide-concerts").checked,
-    $("sort").value, todayMyt(), [...state.starred.keys()], state.here, state.places.size,
+    $("sort").value, todayMyt(), [...state.starred.keys()], state.here, state.places.size, state.date, selectedChains(), $("region").value,
   ]);
   if (gridDrawn.shows === view.shows && gridDrawn.sig === sig) return;
   gridDrawn = { shows: view.shows, sig };
@@ -849,7 +895,7 @@ function renderGrid() {
   const atMain = matchesMain();
   const query = searchText();
   const hideConcerts = $("hide-concerts").checked;
-  const visible = view.shows.filter(s => atMain(s) && matchesSearch(s, query) && (!hideConcerts || !isConcert(s)));
+  const visible = onPickedDate(view.shows).filter(s => atMain(s) && matchesSearch(s, query) && (!hideConcerts || !isConcert(s)));
   const movies = browseMovies(visible, { today: todayMyt(), sort: $("sort").value });
   // Titles come from every show (not just the visible ones), so they only change with the data.
   if (titlesOf.shows !== view.shows) titlesOf = { shows: view.shows, titles: new Map(summarizeMovies(view.shows).map(m => [m.key, m.title])) };
@@ -857,7 +903,193 @@ function renderGrid() {
   for (const movie of movies) movie.title = titles.get(movie.key) || movie.title;
   for (const m of movies) state.lastSummary.set(m.key, m);
   $("count").textContent = `${plural(movies.length, "movie")} · ${plural(new Set(visible.map(venueKey)).size, "cinema")}`;
-  $("grid").replaceChildren(...(movies.length ? movies.map(m => movieCard(m)) : [el("p", { class: "empty" }, !selectedChains().length ? "Pick GSC, TGV or both in the Cinema menu to see what's showing." : view.loading ? "Loading movies and advance sales…" : "No movies match these filters.")]));
+  const empty = !selectedChains().length
+    ? "Pick GSC, TGV or both in the Cinema menu to see what's showing."
+    : view.loading ? "Loading movies and advance sales…" : state.date ? `No movies match these filters on ${shortDate(state.date)}.` : "No movies match these filters.";
+  $("grid").replaceChildren(...(movies.length ? movies.map(m => movieCard(m)) : [emptyNote(empty, "movies")]));
+}
+
+/** An empty-list note, with a way out when filters are what emptied it. */
+function emptyNote(text, page) {
+  const filters = activeFilters(page);
+  return el("div", { class: "empty" },
+    el("p", {}, text),
+    filters.length && !state.main.loading
+      ? el("button", { type: "button", class: "clear-filters", onclick: () => clearFilters(filters) }, filters.length === 1 ? `Remove filter: ${filters[0].label}` : "Clear all filters")
+      : null);
+}
+
+// ---------------------------------------------------------------- active filters
+
+/** Everything narrowing a page, so a saved-looking choice (GSC only, one cinema) is never invisible. */
+function activeFilters(page) {
+  const list = [];
+  const chains = selectedChains();
+  if (state.date) list.push({ kind: "date", label: shortDate(state.date), clear: () => { state.date = ""; } });
+  if ($("region").value) list.push({ kind: "region", label: regionLabel(), clear: () => { $("region").value = ""; return "reload"; } });
+  if (chains.length !== 2) {
+    list.push({ kind: "chain", label: chains.length ? `${chains[0]} only` : "No chain", clear: () => {
+      for (const box of document.querySelectorAll("input[name=chain]")) box.checked = true;
+      return "reload";
+    } });
+  }
+  if (page === "movies") {
+    if (chosenValues($("cinema")).length) list.push({ kind: "cinema", label: cinemaSummary($("cinema")), clear: () => setChosen($("cinema"), []) });
+    if (chosenValues($("hall")).length) list.push({ kind: "hall", label: hallSummary($("hall")), clear: () => setChosen($("hall"), []) });
+    if (searchText()) list.push({ kind: "search", label: `“${searchText()}”`, clear: () => { $("q").value = ""; } });
+    if (!$("hide-concerts").checked) list.push({ kind: "concerts", label: "Concerts included", clear: () => { $("hide-concerts").checked = true; } });
+  } else if (cinemaQuery()) {
+    list.push({ kind: "cinema_search", label: `“${cinemaQuery()}”`, clear: () => { $("cq").value = ""; } });
+  }
+  return list;
+}
+
+function clearFilters(filters) {
+  track("filter_change", { control: "clear", value: filters.map((f) => f.kind).join(",") });
+  const reload = filters.map((f) => f.clear()).includes("reload");
+  if (reload) reloadAll();
+  else render();
+}
+
+function renderActiveFilters(box, page) {
+  const filters = activeFilters(page);
+  box.hidden = !filters.length;
+  const sig = filters.map((f) => f.label).join("|");
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.replaceChildren(
+    ...(filters.length ? [el("span", { class: "label" }, "Filtered by")] : []),
+    ...filters.map((f) =>
+      el("button", { type: "button", class: "chip", title: "Remove this filter", "aria-label": `Remove filter: ${f.label}`, onclick: () => clearFilters([f]) },
+        el("span", {}, f.label), el("span", { class: "chip-x", "aria-hidden": "true" }, "×"))),
+    ...(filters.length > 1 ? [el("button", { type: "button", class: "link-btn mono", onclick: () => clearFilters(activeFilters(page)) }, "Clear all")] : []),
+  );
+}
+
+// ---------------------------------------------------------------- cinema list
+
+const cinemaQuery = () => $("cq").value.trim();
+
+let cinemasDrawn = { shows: null, sig: "" };
+
+function renderCinemas() {
+  const view = state.main;
+  const today = todayMyt();
+  renderPickStrip($("c-dates"), "c-date", upcomingDates(view.shows));
+  const sig = JSON.stringify([view.shows.length, view.cinemas.length, view.loading, state.date, cinemaQuery(), $("c-sort").value, today,
+    [...state.starred.keys()], state.here, state.places.size, selectedChains(), $("region").value]);
+  if (cinemasDrawn.shows === view.shows && cinemasDrawn.sig === sig) return;
+  cinemasDrawn = { shows: view.shows, sig };
+  const seen = new Map(); // venue key -> {movies, shows}
+  for (const s of onPickedDate(view.shows)) {
+    const k = venueKey(s);
+    const row = seen.get(k) || seen.set(k, { movies: new Set(), shows: 0 }).get(k);
+    row.movies.add(movieGroupKey(s));
+    row.shows++;
+  }
+  const listed = view.cinemas.length
+    ? view.cinemas.map((c) => ({ key: `${c.chain}|${c.name}`, chain: c.chain, name: c.name, region: c.region }))
+    : [...new Map(view.shows.map((s) => [venueKey(s), { key: venueKey(s), chain: s.chain, name: s.cinema_name, region: s.region }])).values()];
+  const query = looseText(cinemaQuery());
+  const rows = [...new Map(listed.map((c) => [c.key, c])).values()]
+    .filter((c) => !query || looseText(`${c.chain} ${c.name} ${c.region}`).includes(query))
+    .map((c) => ({ ...c, movies: seen.get(c.key)?.movies.size || 0, shows: seen.get(c.key)?.shows || 0 }));
+  const sort = $("c-sort").value;
+  const far = (k) => kmTo(k) ?? Infinity;
+  rows.sort((a, b) =>
+    // Starred first, then cinemas with something on.
+    Number(isStarred(b.key)) - Number(isStarred(a.key)) ||
+    Number(b.shows > 0) - Number(a.shows > 0) ||
+    (sort === "near" ? far(a.key) - far(b.key) : sort === "movies" ? b.movies - a.movies || b.shows - a.shows : 0) ||
+    a.name.localeCompare(b.name));
+  const open = rows.filter((c) => c.shows).length;
+  $("c-count").textContent = rows.length ? `${plural(rows.length, "cinema")} · ${open} showing${state.date ? ` ${shortDate(state.date)}` : ""}` : "";
+  if (!rows.length) {
+    const text = !selectedChains().length ? "Pick GSC, TGV or both to see their cinemas." : view.loading ? "Loading cinemas…" : "No cinemas match these filters.";
+    $("c-list").replaceChildren(emptyNote(text, "cinemas"));
+    return;
+  }
+  $("c-list").replaceChildren(el("div", { class: "crows" }, rows.map(cinemaRow)));
+}
+
+function cinemaRow(c) {
+  const km = kmLabel(kmTo(c.key));
+  return el("div", { class: `crow${isStarred(c.key) ? " starred" : ""}${c.shows ? "" : " none"}` },
+    starButton(c.key, c.region),
+    el("a", { class: "crow-link", href: `#/cinema/${encodeURIComponent(c.key)}` },
+      el("span", { class: "crow-id" }, el("span", { class: `chain ${c.chain}` }, c.chain), el("span", { class: "crow-name" }, c.name)),
+      el("span", { class: "crow-meta mono" }, [c.region, km].filter(Boolean).join(" · ")),
+      el("span", { class: "crow-sum mono" }, c.shows ? `${plural(c.movies, "movie")} · ${plural(c.shows, "show")}` : state.date ? "Nothing this day" : "No shows listed"),
+      el("span", { class: "chev", "aria-hidden": "true" })));
+}
+
+// ---------------------------------------------------------------- cinema page
+
+let cinemaDrawn = "";
+const CINEMA_POSTER_SIZES = "96px";
+
+/** Every show of the cinema page's cinema: the snapshot has all regions and chains; live, the main page's. */
+function cinemaShows(key) {
+  const pool = state.snap?.showtimes || state.main.shows;
+  const today = todayMyt();
+  return (indexOf(pool).byVenue.get(key) || []).filter((s) => s.business_date >= today);
+}
+
+function renderCinema() {
+  const key = state.cinemaKey;
+  const [chain, name] = splitKey(key);
+  const all = cinemaShows(key);
+  const cinema = [...state.main.cinemas, ...(state.snap?.cinemas || [])].find((c) => c.chain === chain && c.name === name);
+  const region = cinema?.region || all[0]?.region || "";
+  if (cinema) rememberPlace(key, cinema);
+  renderPickStrip($("v-dates"), "v-date", [...new Set(all.map((s) => s.business_date))].sort());
+
+  const now = nowMyt();
+  const sig = JSON.stringify([key, all.length, state.main.loading, state.date, now, isStarred(key), state.here, state.places.size]);
+  if (cinemaDrawn === sig) return;
+  cinemaDrawn = sig;
+
+  $("v-star").replaceChildren(starButton(key, region), el("span", { class: `chain ${chain}` }, chain));
+  $("v-name").textContent = name;
+  document.title = `${name} · 52 Frames`;
+  const shows = filterShowtimes(state.date ? all.filter((s) => s.business_date === state.date) : all);
+  const movies = summarizeMovies(shows);
+  for (const m of movies) m.title = state.lastSummary.get(m.key)?.title || m.title;
+  // The next one still to start first; ones that are all over for today go last.
+  const next = (m) => (m.shows.find((s) => s.start >= now) || { start: `~${m.shows[0].start}` }).start;
+  movies.sort((a, b) => cmp(next(a), next(b)) || a.title.localeCompare(b.title));
+  $("v-meta").textContent = [region, kmLabel(kmTo(key))].filter(Boolean).join(" · ");
+  $("v-count").textContent = movies.length ? `${plural(movies.length, "movie")} · ${plural(shows.length, "show")}` : "";
+
+  if (!movies.length) {
+    const loading = state.main.loading && !state.snap;
+    const text = loading
+      ? "Loading showtimes…"
+      : state.date && all.length
+        ? `Nothing on at this cinema on ${shortDate(state.date)}.`
+        : "No showtimes listed for this cinema yet.";
+    $("v-movies").replaceChildren(el("div", { class: "empty" }, el("p", {}, text),
+      state.date && all.length ? el("button", { type: "button", class: "clear-filters", onclick: () => pickDate("") }, "Show all dates") : null));
+    return;
+  }
+  $("v-movies").replaceChildren(...movies.map((m) => cinemaMovie(m, now)));
+}
+
+/** One movie at the cinema page's cinema: poster, title, then its times (by day when showing all dates). */
+function cinemaMovie(summary, now) {
+  const href = `#/movie/${encodeURIComponent(summary.key)}`;
+  const opensOn = state.date || summary.shows[0].business_date;
+  const days = new Map();
+  for (const s of summary.shows) (days.get(s.business_date) || days.set(s.business_date, []).get(s.business_date)).push(s);
+  const times = (list) => el("div", { class: "times" }, list.map((s) => timeChip(s, now)));
+  return el("section", { class: "cm" },
+    el("a", { class: "cm-poster", href, "data-next": opensOn, tabindex: "-1", "aria-hidden": "true" }, posterFrame(summary, CINEMA_POSTER_SIZES)),
+    el("div", { class: "cm-body" },
+      el("h3", {}, el("a", { href, "data-next": opensOn, title: "All cinemas showing this movie" }, summary.title)),
+      el("div", { class: "cm-meta mono" }, [runtime(summary.duration_mins), summary.rating, summary.language].filter(Boolean).join(" · ")),
+      state.date
+        ? times(summary.shows)
+        : [...days].map(([day, list]) => el("div", { class: "cm-day" }, el("span", { class: "cm-date mono" }, shortDate(day)), times(list)))));
 }
 
 /** Text for a day with nothing loaded: unpublished schedule, or a real failure. */
@@ -881,7 +1113,7 @@ function allowSeatPreview(node, show) {
 
 /** A show's live seats or prices. GSC's premium halls need the cinema's hall group. */
 function fetchSeatData(show, signal, method) {
-  const cinema = [...state.sheet.cinemas, ...state.main.cinemas].find((c) => c.chain === show.chain && c.name === show.cinema_name);
+  const cinema = [...state.sheet.cinemas, ...state.main.cinemas, ...(state.snap?.cinemas || [])].find((c) => c.chain === show.chain && c.name === show.cinema_name);
   return providers[show.chain][method]({ ...show, hall_group: cinema?.hall_group || "" }, signal);
 }
 let seatPreview = null;
@@ -989,11 +1221,12 @@ function renderSheet() {
     state.openVenues.clear();
     $("m-sort").value = state.here ? "near" : "time";
     $("m-poster").replaceChildren(summary ? posterFrame(summary, HERO_SIZES) : el("div", { class: "poster no-img" }));
-    // Start from the main page's cinema choice.
+    // Start from the movies grid's cinema and hall choice; from a cinema page, from all of them.
+    const inherit = (select) => (state.page === "movies" ? [...select.selectedOptions] : []).map((o) => new Option(o.text, o.value, true, true));
     $("m-cinema").dataset.sig = "";
-    $("m-cinema").replaceChildren(...[...$("cinema").selectedOptions].map((o) => new Option(o.text, o.value, true, true)));
+    $("m-cinema").replaceChildren(...inherit($("cinema")));
     $("m-hall").dataset.sig = "";
-    $("m-hall").replaceChildren(...[...$("hall").selectedOptions].map((o) => new Option(o.text, o.value, true, true)));
+    $("m-hall").replaceChildren(...inherit($("hall")));
   } else if (summary) {
     const img = $("m-poster").querySelector("img");
     if (img) setPoster(img, summary.posters);
@@ -1088,19 +1321,55 @@ function renderSheet() {
 // ---------------------------------------------------------------- routing
 
 let returnFocus = null;
-let cameFromGrid = false;
+let cameFromGrid = false; // the movie sheet opened from a link on this page: Back is history.back()
+let cameFromCinemas = false; // the same for a cinema page opened from the cinema list
+const pageScroll = new Map(); // page id -> scroll position, restored on the way back
+const pageId = () => (state.page === "cinema" ? `cinema:${state.cinemaKey}` : state.page);
+const pageHash = () => (state.page === "cinema" ? `#/cinema/${encodeURIComponent(state.cinemaKey)}` : state.page === "cinemas" ? "#/cinemas" : "#/");
+const pageTitle = () => (state.page === "cinema" ? `${splitKey(state.cinemaKey)[1]} · 52 Frames` : state.page === "cinemas" ? "Cinemas · 52 Frames" : "52 Frames");
+
+/** Show the movies grid, the cinema list or a cinema page. True when the page changed. */
+function showPage(page, cinemaKey = null) {
+  const before = pageId();
+  if (page === state.page && cinemaKey === state.cinemaKey) return false;
+  pageScroll.set(before, window.scrollY);
+  seatPreview?.close();
+  state.page = page;
+  state.cinemaKey = cinemaKey;
+  cinemaDrawn = "";
+  $("list").hidden = page !== "movies";
+  $("cinemas-page").hidden = page !== "cinemas";
+  $("cinema-page").hidden = page !== "cinema";
+  for (const [id, on] of [["tab-movies", page === "movies"], ["tab-cinemas", page !== "movies"]]) {
+    if (on) $(id).setAttribute("aria-current", "page");
+    else $(id).removeAttribute("aria-current");
+  }
+  if (page === "cinema") track("cinema_open", { chain: splitKey(cinemaKey)[0] });
+  if (page !== "cinema") cameFromCinemas = false;
+  return true;
+}
 
 function route() {
   const match = /^#\/movie\/(.+)$/.exec(location.hash);
   const key = match ? decodeURIComponent(match[1]) : null;
+  // A movie opens over whichever page was showing (the movies grid for a direct link).
+  let moved = false;
+  if (!key) {
+    const cinema = /^#\/cinema\/(.+)$/.exec(location.hash);
+    if (cinema) moved = showPage("cinema", decodeURIComponent(cinema[1]));
+    else moved = showPage(location.hash === "#/cinemas" ? "cinemas" : "movies");
+  }
   const opening = key && !state.movieKey;
   state.movieKey = key;
   $("sheet").hidden = !key;
   document.body.classList.toggle("locked", Boolean(key) || !$("stars").hidden);
   if (opening) {
-    $("m-region").value = $("region").value;
+    // From a cinema page outside the chosen region (a shared link), start from all of Malaysia.
+    const at = state.page === "cinema" ? cinemaShows(state.cinemaKey)[0] : null;
+    const outside = at && !inScope(at.chain, at.region, [at.chain], $("region").value);
+    $("m-region").value = outside ? "" : $("region").value;
     $("to-top").hidden = true;
-    state.sheet.date = state.pendingSheetDate || movieDates(state.main.shows, key, matchesMain())[0] || todayMyt();
+    state.sheet.date = state.pendingSheetDate || movieDates(state.main.shows, key, matchesSheetStart())[0] || todayMyt();
     state.pendingSheetDate = null;
     load(state.sheet);
     returnFocus = document.activeElement;
@@ -1111,25 +1380,33 @@ function route() {
     seatPreview?.close();
     sheetKey = null;
     trackedMovieKey = null;
-    document.title = "52 Frames";
+    document.title = pageTitle();
     returnFocus?.focus?.({ preventScroll: true });
     returnFocus = null;
   }
   render();
+  if (moved) window.scrollTo(0, pageScroll.get(pageId()) || 0);
 }
 
 function closeSheet() {
   if (cameFromGrid) history.back();
-  else location.hash = "#/";
+  else location.hash = pageHash();
   cameFromGrid = false;
+}
+
+function reloadAll() {
+  load(state.main);
+  if (state.movieKey) load(state.sheet);
 }
 
 const dropdowns = [];
 
-/** What the folded filter button says on phones: only what differs from the defaults. */
+/** What the folded filter buttons say on phones: the date, then only what differs from the defaults. */
 function renderFilterSummary() {
   $("clear-search").hidden = !searchText();
-  const parts = [regionLabel()];
+  $("c-clear-search").hidden = !cinemaQuery();
+  const date = state.date ? shortDate(state.date) : "All dates";
+  const parts = [date, regionLabel()];
   if (chosenValues($("cinema")).length) parts.push(cinemaSummary($("cinema")));
   if (chosenValues($("hall")).length) parts.push(hallSummary($("hall")));
   if ($("sort").value !== "shows") parts.push($("sort").selectedOptions[0].text);
@@ -1138,21 +1415,40 @@ function renderFilterSummary() {
   parts.push($("hide-concerts").checked ? "Concerts hidden" : "Concerts included");
   if (searchText()) parts.push(`“${searchText()}”`);
   $("filters-summary").textContent = parts.join(" · ");
+
+  const cinemaParts = [date, regionLabel()];
+  if (chains.length !== 2) cinemaParts.push(chains.length ? `${chains[0]} only` : "No chain");
+  if ($("c-sort").value !== "name") cinemaParts.push($("c-sort").selectedOptions[0].text);
+  if (cinemaQuery()) cinemaParts.push(`“${cinemaQuery()}”`);
+  $("c-filters-summary").textContent = cinemaParts.join(" · ");
 }
 
-function toggleFilters(open = !$("filters").classList.contains("open")) {
-  $("filters").classList.toggle("open", open);
-  $("filters-toggle").setAttribute("aria-expanded", String(open));
+/** Fold or unfold a page's filters on phones ("" for the movies page, "c-" for the cinema list). */
+function toggleFilters(open, prefix = "") {
+  const box = $(`${prefix}filters`);
+  open ??= !box.classList.contains("open");
+  box.classList.toggle("open", open);
+  $(`${prefix}filters-toggle`).setAttribute("aria-expanded", String(open));
 }
 
 function render() {
-  for (const pill of document.querySelectorAll(".cselect-head [data-chain]")) {
+  for (const pill of document.querySelectorAll(".toggle[data-chain]")) {
     pill.setAttribute("aria-pressed", String(selectedChains().includes(pill.dataset.chain)));
   }
+  // A date that has passed (the page stayed open overnight) goes back to every date.
+  if (state.date && state.date < todayMyt()) state.date = "";
+  $("c-region").value = $("region").value;
   renderTools();
   renderFilterSummary();
-  renderStatus();
-  renderGrid();
+  if (state.page === "movies") {
+    renderStatus();
+    renderPickStrip($("dates"), "date", upcomingDates(state.main.shows));
+    renderActiveFilters($("active-filters"), "movies");
+    renderGrid();
+  } else if (state.page === "cinemas") {
+    renderActiveFilters($("c-active-filters"), "cinemas");
+    renderCinemas();
+  } else renderCinema();
   if (state.movieKey) renderSheet();
   renderStars();
   for (const d of dropdowns) d.sync();
@@ -1160,8 +1456,8 @@ function render() {
 
 // ---------------------------------------------------------------- wiring
 
-async function init() {
-  import("./analytics.js?v=28").then((analytics) => {
+function init() {
+  import("./analytics.js?v=29").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;
@@ -1171,20 +1467,15 @@ async function init() {
     track = () => {};
     pendingAnalytics = null;
   }); // A blocked/missing analytics module must not prevent the app from starting.
-  const saved = readLocal("showtimes:prefs", {});
-  // All Malaysia by default. ("area", not the old "region": that one saved the old Klang Valley default.)
-  if (typeof saved.area === "string" && [...$("region").options].some((o) => o.value === saved.area)) {
-    $("region").value = saved.area;
+  // Only the starred cinemas are kept between visits; every other setting starts from its default.
+  try {
+    storage("localStorage")?.removeItem("showtimes:prefs"); // what older versions saved
+  } catch {
+    // Storage blocked: nothing saved anyway.
   }
-  $("m-region").replaceChildren(...[...$("region").options].map((o) => new Option(o.text, o.value)));
-  if (Array.isArray(saved.chains) && saved.chains.length) {
-    for (const box of document.querySelectorAll("input[name=chain]")) box.checked = saved.chains.includes(box.value);
-  }
-  // Grouped by time by default; once someone picks a grouping, keep it.
-  if (saved.group === "cinema") document.querySelector("input[name=group][value=cinema]").checked = true;
-  $("hide-concerts").checked = saved.hideConcerts !== false;
-  for (const id of ["region", "sort", "cinema", "hall", "m-region", "m-cinema", "m-hall", "m-sort", "stars-region", "stars-chain"]) {
-    const options = id.endsWith("cinema") ? { summary: cinemaSummary } : id.endsWith("hall") ? { summary: hallSummary } : {};
+  for (const id of ["m-region", "c-region"]) $(id).replaceChildren(...[...$("region").options].map((o) => new Option(o.text, o.value)));
+  for (const id of ["region", "sort", "cinema", "hall", "m-region", "m-cinema", "m-hall", "m-sort", "c-region", "c-sort", "stars-region", "stars-chain"]) {
+    const options = id.endsWith("cinema") ? { summary: cinemaSummary, search: "Search cinemas" } : id.endsWith("hall") ? { summary: hallSummary } : {};
     // GSC / TGV pills at the top of the cinema lists.
     if (id === "cinema") options.header = $("chains");
     if (id === "m-cinema") options.header = $("m-chains");
@@ -1198,16 +1489,17 @@ async function init() {
     window.scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   });
 
-  $("toolbar").addEventListener("submit", (e) => e.preventDefault());
-  const reloadAll = () => {
-    load(state.main);
-    if (state.movieKey) load(state.sheet);
-  };
+  for (const id of ["toolbar", "c-toolbar"]) $(id).addEventListener("submit", (e) => e.preventDefault());
   $("region").addEventListener("change", reloadAll);
+  // The cinema list's region is the main page's region.
+  $("c-region").addEventListener("change", () => {
+    $("region").value = $("c-region").value;
+    $("region").dispatchEvent(new Event("change", { bubbles: true }));
+  });
   for (const box of document.querySelectorAll("input[name=chain]")) box.addEventListener("change", reloadAll);
   // Both cinema lists' chain pills flip the one chain setting (the hidden checkboxes), whose
   // listeners reload both views; the movie view only has the chains the page loaded.
-  for (const id of ["chains", "m-chains"]) {
+  for (const id of ["chains", "m-chains", "c-chains"]) {
     $(id).addEventListener("click", (e) => {
       const pill = e.target.closest("[data-chain]");
       if (!pill) return;
@@ -1216,7 +1508,8 @@ async function init() {
       box.dispatchEvent(new Event("change", { bubbles: true }));
     });
   }
-  // The two date strips are independent: the movie view's date doesn't move the main page's.
+  // The movies grid, cinema list and cinema pages share one date; the movie view keeps its own.
+  for (const id of ["dates", "c-dates", "v-dates"]) $(id).addEventListener("change", (e) => pickDate(e.target.value));
 
   $("m-dates").addEventListener("change", (e) => setDate(state.sheet, e.target.value));
   $("m-region").addEventListener("change", () => load(state.sheet));
@@ -1229,7 +1522,22 @@ async function init() {
   });
   for (const id of ["cinema", "m-cinema", "hall", "m-hall"]) $(id).addEventListener("change", (e) => tidyChoice(e.target));
   for (const id of ["cinema", "hall", "sort"]) $(id).addEventListener("change", render);
-  $("hide-concerts").addEventListener("change", () => { savePrefs(); render(); });
+  $("hide-concerts").addEventListener("change", render);
+  $("c-sort").addEventListener("change", render);
+  $("c-sort").addEventListener("change", () => track("filter_change", { control: "c-sort", value: $("c-sort").value }));
+  $("cq").addEventListener("input", render);
+  $("c-clear-search").addEventListener("click", () => {
+    $("cq").value = "";
+    render();
+    $("cq").focus();
+  });
+  $("cq").addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("cq").value) {
+      e.stopPropagation();
+      $("cq").value = "";
+      render();
+    }
+  });
   $("q").addEventListener("input", render);
   // Debounce analytics only; search still renders immediately. Never send the search text.
   let searchTimer;
@@ -1258,6 +1566,7 @@ async function init() {
     $("q").focus();
   });
   $("filters-toggle").addEventListener("click", () => toggleFilters());
+  $("c-filters-toggle").addEventListener("click", () => toggleFilters(undefined, "c-"));
   $("q").addEventListener("keydown", (e) => {
     if (e.key === "Escape" && $("q").value) {
       e.stopPropagation();
@@ -1266,26 +1575,32 @@ async function init() {
     }
   });
 
-  $("grid").addEventListener("click", (e) => {
-    const card = e.target.closest("a.card");
-    if (!card || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    cameFromGrid = true;
-    state.pendingSheetDate = card.dataset.next || null;
+  // A movie link on any page (grid card, cinema page) opens the movie on the day it next shows there.
+  document.addEventListener("click", (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const link = e.target.closest?.('a[href^="#/movie/"]');
+    if (link) {
+      cameFromGrid = true;
+      state.pendingSheetDate = link.dataset.next || null;
+    }
+    if (e.target.closest?.("a.crow-link")) cameFromCinemas = true;
+  });
+  $("v-back").addEventListener("click", (e) => {
+    if (!cameFromCinemas) return;
+    e.preventDefault();
+    history.back();
   });
   for (const id of ["m-cinema", "m-hall", "m-sort"]) $(id).addEventListener("change", render);
-  for (const radio of document.querySelectorAll("input[name=group]")) {
-    radio.addEventListener("change", () => {
-      savePrefs();
-      render();
-    });
-  }
-  seatPreview = enableSeatPreview($("m-schedule"), {
+  for (const radio of document.querySelectorAll("input[name=group]")) radio.addEventListener("change", render);
+  const seatOptions = {
     selector: ".seat-hold",
     onEvent: (name, params) => track(name, params),
     showFor: (node) => seatShows.get(node),
     fetchPlan: (show, signal) => fetchSeatData(show, signal, "fetchSeatPlan"),
     fetchPrices: (show, signal) => fetchSeatData(show, signal, "fetchSeatPrices"),
-  });
+  };
+  seatPreview = enableSeatPreview($("m-schedule"), seatOptions);
+  const cinemaSeatPreview = enableSeatPreview($("v-movies"), seatOptions);
   // The seat-map capture handler suppresses the click after a touch hold before it gets here.
   const trackBooking = (e) => {
     if (e.type === "auxclick" && e.button !== 1) return;
@@ -1293,8 +1608,11 @@ async function init() {
     const show = node && seatShows.get(node);
     if (show && !e.defaultPrevented) track("booking_click", { chain: show.chain, movie: movieGroupKey(show) });
   };
-  $("m-schedule").addEventListener("click", trackBooking);
-  $("m-schedule").addEventListener("auxclick", trackBooking);
+  for (const id of ["m-schedule", "v-movies"]) {
+    $(id).addEventListener("click", trackBooking);
+    $(id).addEventListener("auxclick", trackBooking);
+  }
+  window.addEventListener("hashchange", () => cinemaSeatPreview.close());
   $("sheet").addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) closeSheet();
   });
@@ -1314,16 +1632,22 @@ async function init() {
   });
 
   document.addEventListener("keydown", (e) => {
-    // "/" jumps to the search box (unless typing somewhere already).
-    if (e.key === "/" && !state.movieKey && $("stars").hidden && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) {
+    // "/" jumps to the page's search box (unless typing somewhere already).
+    if (e.key === "/" && !state.movieKey && $("stars").hidden && state.page !== "cinema" && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName)) {
       e.preventDefault();
-      toggleFilters(true);
-      $("q").focus();
+      if (state.page === "movies") {
+        toggleFilters(true);
+        $("q").focus();
+      } else {
+        toggleFilters(true, "c-");
+        $("cq").focus();
+      }
       return;
     }
     if (e.key !== "Escape") return;
     if (!$("stars").hidden) closeStars();
     else if (state.movieKey) closeSheet();
+    else if (state.page === "cinema") $("v-back").click();
   });
   window.addEventListener("hashchange", route);
   // The poster column pins just below the movie header, whatever height the header has.
@@ -1340,18 +1664,12 @@ async function init() {
   load(state.main);
   route();
   snapshotOnce().then((snap) => {
-    if (snap) render();
-  });
-
-  // Turn location back on without a prompt if the visitor already allowed it.
-  if (saved.location) {
-    try {
-      const status = await navigator.permissions?.query({ name: "geolocation" });
-      if (status?.state === "granted") locate();
-    } catch {
-      // Permissions API unavailable: wait for the button.
+    state.snap = snap;
+    if (snap) {
+      rememberCinemaPlaces(snap.cinemas);
+      render();
     }
-  }
+  });
 }
 
 init();

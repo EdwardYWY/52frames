@@ -66,16 +66,17 @@ longer than one region (about 10 s for Klang Valley).
 build step, no dependencies.
 
 - **Movies**: a poster grid across all published booking dates, including advance sales.
+  A date strip (All by default) shows only what's on a chosen day.
   Search by title or language ("CAN" or "Cantonese"; `/` focuses search), filter by region
   (All Malaysia by default), cinemas and chain. Concerts are hidden
-  by default; the Content checkbox includes them and remembers the choice. Musicals stay visible.
+  by default; the Content checkbox includes them. Musicals stay visible.
   Posters have no overlays or corner decoration; the show count sits below the title, followed by "Showing now"
   or "Next screening" using the booking business date.
   Sort labels remain Most shows, Title A–Z and Earliest show. Earliest show orders today's movies
   A–Z, then future movies by booking date with A–Z ties. Most shows counts all published sessions.
 - **Movie view** (tap a poster; the back button or Esc returns to the grid): a pinned header with
   the back button, title and only that movie's available booking dates (including month labels).
-  The schedule shows **by time** (the default; the last choice is remembered) or **by cinema**
+  The schedule shows **by time** (the default) or **by cinema**
   (collapsed rows with the next times; starred cinemas first; sort by earliest show, nearest, name
   or most shows); starred cinemas get a star pattern in both. Region (starts from the main page's),
   cinema (several at once, or ★ Starred) and start-time dropdowns stay pinned under the header
@@ -98,11 +99,19 @@ build step, no dependencies.
   `cinema_showtimes/tgv.py`; a new TGV cinema shows as "<State> - <name>" until it's added there).
   Languages are matched across chains (GSC's "IND" is TGV's "Bahasa Indonesia"), and a session
   TGV lists under two movie entries is shown once.
+- **Cinemas** (tab next to Movies): every cinema in the chosen region and chains, with how many
+  movies and shows it has on the chosen date. Search by cinema, mall or town; sort by name,
+  nearest or most movies; starred cinemas first. The date is shared with the Movies tab.
+  A cinema's page lists its movies, each with its times (grouped by day when the date is All);
+  a movie's title opens its movie view on that date.
+- **Filters in use** show as chips above the results ("GSC only", a cinema, a date…), each with ×
+  to remove it, so a narrowed list is never a surprise. The cinema dropdowns have a search box.
 - **Location** (optional, top bar): shows the distance to each cinema and enables "Nearest". GSC
   sends cinema coordinates; TGV's are in `site/js/places.js` (looked up once from OpenStreetMap,
   © OpenStreetMap contributors), because TGV's own map links are missing or wrong for many cinemas.
-- **Starred cinemas** (top bar → Starred): star or unstar any cinema, clear all. Stars, location
-  on/off and the last region are kept in this browser's `localStorage`. Analytics records feature
+- **Starred cinemas** (top bar → Starred): star or unstar any cinema, clear all. Only the stars
+  are kept between visits (this browser's `localStorage`); every other setting starts from its
+  default each time. Analytics records feature
   actions without sending the saved star list or precise location.
 
 Live seat maps (the hidden 1.5-second hold) use the chains' public read-only endpoints, with no login:
@@ -130,6 +139,11 @@ How it works:
    while the remaining results stay available. Session requests are cached for 10 minutes.
 
 The browser fallback uses the chains' public website endpoints and requires their CORS headers.
+
+**Sizes** in `site/css/style.css` come from one scale at the top of the file: font sizes (`--fs-*`),
+spacing (`--sp-*`, 4 px steps), line heights, letter spacing and control heights.
+`tests/js/css-scale.test.mjs` fails on a raw px font size, gap, padding or margin (1–3 px nudges and
+the seat map excepted), so pick the nearest step instead of a one-off value.
 
 ```
 site/

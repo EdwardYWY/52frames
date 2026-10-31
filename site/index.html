@@ -7,8 +7,8 @@
 <meta name="description" content="GSC and TGV showtimes across Malaysia, on one page.">
 <title>52 Frames</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Cpath d='M6 6h14l6 6v14H6z' fill='%23ffd200'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=26">
-<script type="module" src="js/app.js?v=28"></script>
+<link rel="stylesheet" href="css/style.css?v=28">
+<script type="module" src="js/app.js?v=29"></script>
 </head>
 <body>
 
@@ -28,6 +28,13 @@
   </div>
 </header>
 
+<nav class="views" aria-label="Browse">
+  <div class="views-in">
+    <a class="view-tab" id="tab-movies" href="#/" aria-current="page">Movies</a>
+    <a class="view-tab" id="tab-cinemas" href="#/cinemas">Cinemas</a>
+  </div>
+</nav>
+
 <main class="page" id="list">
   <section class="intro">
     <div class="intro-row">
@@ -42,6 +49,7 @@
       <span class="chev" aria-hidden="true"></span>
     </button>
     <div class="filters" id="filters">
+      <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="dates" role="radiogroup" aria-label="Date"></div></div>
       <label class="field field-search">
         <span class="label">Search movies</span>
         <span class="search-box">
@@ -77,6 +85,8 @@
     </div>
   </form>
 
+  <div class="active-filters" id="active-filters" hidden></div>
+
   <div class="status" role="status" aria-live="polite">
     <div class="progress" id="progress" hidden><div class="bar"><span id="bar"></span></div><span class="mono" id="progress-text"></span></div>
     <div id="warnings"></div>
@@ -86,13 +96,72 @@
 
   <footer class="foot">
     <p>Times are Malaysia time. Tap a time to book on the chain's own site; seats are chosen there.
-      ☆ a cinema to keep it at the top; stars and your location stay in this browser only.
+      ☆ a cinema to keep it at the top; your stars stay in this browser only, and other settings reset on each visit.
       Struck-through times are sold out; <b class="mono">+1</b> marks shows after midnight.</p>
     <p>Google Analytics measures visits and feature usage, with advertising features disabled.
       Search text and your precise location are not included in our analytics events.</p>
     <p>Data comes straight from GSC and TGV's public website endpoints, refreshed in a shared snapshot.
       Unofficial and unaffiliated.</p>
   </footer>
+</main>
+
+<main class="page" id="cinemas-page" hidden>
+  <section class="intro">
+    <div class="intro-row">
+      <h1>Cinemas</h1>
+      <span class="mono intro-count" id="c-count"></span>
+    </div>
+  </section>
+
+  <form class="toolbar" id="c-toolbar" autocomplete="off" role="search">
+    <button type="button" class="filters-toggle" id="c-filters-toggle" aria-expanded="false" aria-controls="c-filters">
+      <span class="filters-title">Filters</span><span class="filters-summary" id="c-filters-summary"></span>
+      <span class="chev" aria-hidden="true"></span>
+    </button>
+    <div class="filters" id="c-filters">
+      <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="c-dates" role="radiogroup" aria-label="Date"></div></div>
+      <label class="field field-search">
+        <span class="label">Search cinemas</span>
+        <span class="search-box">
+          <input type="search" id="cq" placeholder="Cinema, mall or town" enterkeyhint="search" spellcheck="false">
+          <kbd class="search-key mono" aria-hidden="true">/</kbd>
+          <button type="button" class="search-clear" id="c-clear-search" aria-label="Clear cinema search" hidden><span aria-hidden="true">×</span></button>
+        </span>
+      </label>
+      <label class="field"><span class="label">Region</span><span class="select"><select id="c-region"></select></span></label>
+      <div class="field chain-field" id="c-chains" role="group" aria-label="Chain">
+        <span class="label">Chain</span>
+        <span class="chain-pills">
+          <button type="button" class="toggle gsc" data-chain="GSC" aria-pressed="true"><span>GSC</span></button>
+          <button type="button" class="toggle tgv" data-chain="TGV" aria-pressed="true"><span>TGV</span></button>
+        </span>
+      </div>
+      <label class="field"><span class="label">Sort</span>
+        <span class="select"><select id="c-sort">
+          <option value="name">Name A–Z</option><option value="near">Nearest</option><option value="movies">Most movies</option>
+        </select></span>
+      </label>
+    </div>
+  </form>
+
+  <div class="active-filters" id="c-active-filters" hidden></div>
+  <div id="c-list"></div>
+</main>
+
+<main class="page" id="cinema-page" hidden>
+  <header class="v-head">
+    <a class="close v-back" href="#/cinemas" id="v-back"><span aria-hidden="true">←</span><span class="close-text">Cinemas</span></a>
+    <div class="v-title">
+      <span id="v-star"></span>
+      <h1 id="v-name"></h1>
+    </div>
+    <p class="mono v-meta" id="v-meta"></p>
+  </header>
+  <div class="toolbar v-toolbar">
+    <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="v-dates" role="radiogroup" aria-label="Date"></div></div>
+  </div>
+  <div class="sec-head"><h3>Movies</h3><span class="sec-rule"></span><span class="mono" id="v-count"></span></div>
+  <div id="v-movies"></div>
 </main>
 <button type="button" class="to-top page-top" id="page-top" hidden><span aria-hidden="true">↑</span><span>Top</span></button>
 
