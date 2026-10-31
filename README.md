@@ -97,6 +97,10 @@ build step, no dependencies.
 - **Cinema names** use GSC's "Town - Mall" style for both chains: TGV's "TGV 1 Utama" shows as
   "Petaling Jaya - 1 Utama" (table `TGV_NAMES` in `site/js/places.js`, mirrored in
   `cinema_showtimes/tgv.py`; a new TGV cinema shows as "<State> - <name>" until it's added there).
+  GSC lists three premium halls as cinemas of their own (HLB Prestige at 1 Utama, Premiere at IOI
+  City Mall 2 and Paradigm JB); they show as halls of their cinema instead, with hall type
+  Prestige or Premiere (`GSC_PREMIUM_HALL_GROUPS` in `site/js/places.js`; a new one stays separate
+  until it's added there). Their seat maps still use the hall's own GSC hall group.
   Languages are matched across chains (GSC's "IND" is TGV's "Bahasa Indonesia"), and a session
   TGV lists under two movie entries is shown once.
 - **Cinemas** (tab next to Movies): every cinema in the chosen region and chains, with how many
