@@ -7,8 +7,8 @@
 <meta name="description" content="GSC and TGV showtimes across Malaysia, on one page.">
 <title>52 Frames</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Cpath d='M6 6h14l6 6v14H6z' fill='%23ffd200'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=28">
-<script type="module" src="js/app.js?v=29"></script>
+<link rel="stylesheet" href="css/style.css?v=29">
+<script type="module" src="js/app.js?v=30"></script>
 </head>
 <body>
 
@@ -163,6 +163,10 @@
   <div class="sec-head"><h3>Movies</h3><span class="sec-rule"></span><span class="mono" id="v-count"></span></div>
   <div id="v-movies"></div>
 </main>
+<div class="notice" id="location-notice" role="alert" hidden>
+  <p id="location-notice-text"></p>
+  <button type="button" class="notice-close" id="location-notice-close" aria-label="Close"><span aria-hidden="true">×</span></button>
+</div>
 <button type="button" class="to-top page-top" id="page-top" hidden><span aria-hidden="true">↑</span><span>Top</span></button>
 
 <div class="sheet stars-sheet" id="stars" hidden>

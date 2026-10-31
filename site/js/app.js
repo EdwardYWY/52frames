@@ -250,10 +250,17 @@ function kmLabel(km) {
   return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 }
 
+/** What to do about a failed location request, by GeolocationPositionError code. */
+const LOCATION_HELP = {
+  1: "Location is blocked for this site. Click the icon at the left of the address bar (on a phone: the browser's site settings), allow Location, then press Location again.",
+  2: "Your device couldn't work out where it is. On a computer, check that location services are on (Windows: Settings › Privacy & security › Location; Mac: System Settings › Privacy & Security › Location Services), then press Location again.",
+  3: "Finding your location took too long. Press Location to try again.",
+};
+
 function locate() {
   if (!navigator.geolocation) {
     state.locationError = "This browser can't share a location.";
-    renderTools();
+    render();
     return;
   }
   state.locating = true;
@@ -270,8 +277,10 @@ function locate() {
     (err) => {
       state.locating = false;
       state.here = null;
-      state.locationError =
-        err.code === err.PERMISSION_DENIED ? "Location is blocked for this site in your browser settings." : "Couldn't get your location.";
+      state.locationError = LOCATION_HELP[err.code] || "Couldn't get your location. Press Location to try again.";
+      // "Nearest" was picked before the location came through: back to the default order.
+      if ($("m-sort").value === "near") $("m-sort").value = "time";
+      if ($("c-sort").value === "near") $("c-sort").value = "name";
       render();
     },
     { enableHighAccuracy: false, timeout: 15000, maximumAge: 10 * 60 * 1000 },
@@ -488,8 +497,44 @@ function renderPickStrip(strip, name, dates) {
           el("span", {}, el("small", {}, iso === today ? "Today" : p.weekday), el("b", {}, String(p.day)), el("small", { class: "day-month" }, p.month)));
       }),
     );
+    // A strip rebuilt with a later date picked (another page, a new day) shows that date.
+    const picked = state.date && strip.querySelector(`input[value="${state.date}"]`)?.closest(".day");
+    strip.scrollLeft = picked ? picked.offsetLeft - strip.clientWidth / 2 + picked.offsetWidth / 2 : 0;
   }
   for (const input of strip.querySelectorAll("input")) input.checked = input.value === state.date;
+}
+
+/**
+ * Date strips scroll sideways without a scrollbar: ‹ › buttons at the ends, shown when there are
+ * more dates that way, and the mouse wheel scrolls them on a computer.
+ */
+const stripUpdates = [];
+function enhanceStrip(strip) {
+  const wrap = el("div", { class: "strip" });
+  strip.before(wrap);
+  const nav = (dir, label, glyph) =>
+    el("button", {
+      type: "button", class: `strip-nav ${dir}`, "aria-label": label, tabindex: "-1", hidden: true,
+      onclick: () => strip.scrollBy({ left: (dir === "prev" ? -0.8 : 0.8) * strip.clientWidth, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }),
+    }, el("span", { "aria-hidden": "true" }, glyph));
+  const prev = nav("prev", "Earlier dates", "‹");
+  const next = nav("next", "Later dates", "›");
+  wrap.append(prev, strip, next);
+  const update = () => {
+    prev.hidden = strip.scrollLeft <= 1;
+    next.hidden = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+  };
+  strip.addEventListener("scroll", update, { passive: true });
+  new ResizeObserver(update).observe(strip);
+  // A vertical wheel scrolls the dates, until they reach an end; then the page scrolls as usual.
+  strip.addEventListener("wheel", (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    const max = strip.scrollWidth - strip.clientWidth;
+    if (max <= 0 || (e.deltaY < 0 && strip.scrollLeft <= 0) || (e.deltaY > 0 && strip.scrollLeft >= max - 1)) return;
+    e.preventDefault();
+    strip.scrollLeft += e.deltaY;
+  }, { passive: false });
+  stripUpdates.push(update);
 }
 
 function pickDate(iso) {
@@ -656,10 +701,11 @@ function renderTools() {
   button.classList.toggle("err", Boolean(state.locationError));
   $("star-count").textContent = state.starred.size ? String(state.starred.size) : "";
   for (const id of ["m-sort", "c-sort"]) {
-    const near = $(id).querySelector("option[value=near]");
-    near.disabled = !state.here;
-    near.textContent = state.here ? "Nearest" : "Nearest (turn on location)";
+    $(id).querySelector("option[value=near]").textContent = state.here ? "Nearest" : "Nearest (asks for your location)";
   }
+  // Shown on every page (and over the movie view) until it's closed or the location comes through.
+  $("location-notice").hidden = !state.locationError;
+  $("location-notice-text").textContent = state.locationError;
 }
 
 // ---------------------------------------------------------------- loading
@@ -815,7 +861,7 @@ function renderStatus() {
   $("bar").style.width = total ? `${(done / total) * 100}%` : view.loading ? "4%" : "0";
   $("progress-text").textContent = progressLabel(view);
 
-  const errors = state.locationError ? [...view.errors, state.locationError] : view.errors;
+  const errors = view.errors;
   if (!errors.length) {
     $("warnings").replaceChildren();
     return;
@@ -823,7 +869,7 @@ function renderStatus() {
   const list = el("ul", {}, errors.map((e) => el("li", {}, e)));
   $("warnings").replaceChildren(
     errors.length <= 2
-      ? el("div", { class: "warn" }, el("strong", {}, view.errors.length ? "Some cinemas didn't answer, so a few times may be missing." : ""), list)
+      ? el("div", { class: "warn" }, el("strong", {}, "Some cinemas didn't answer, so a few times may be missing."), list)
       : el("details", { class: "warn" }, el("summary", {}, `${plural(errors.length, "cinema")} didn't answer, so a few times may be missing.`), list),
   );
 }
@@ -1452,6 +1498,7 @@ function render() {
   if (state.movieKey) renderSheet();
   renderStars();
   for (const d of dropdowns) d.sync();
+  for (const update of stripUpdates) update();
 }
 
 // ---------------------------------------------------------------- wiring
@@ -1481,6 +1528,7 @@ function init() {
     if (id === "m-cinema") options.header = $("m-chains");
     dropdowns.push(enhanceSelect($(id), options));
   }
+  for (const id of ["dates", "c-dates", "v-dates", "m-dates"]) enhanceStrip($(id));
   tickClock();
   setInterval(tickClock, 15000);
   // Back to top on the movie list too, once it has scrolled a screen or so.
@@ -1524,6 +1572,18 @@ function init() {
   for (const id of ["cinema", "hall", "sort"]) $(id).addEventListener("change", render);
   $("hide-concerts").addEventListener("change", render);
   $("c-sort").addEventListener("change", render);
+  // Picking "Nearest" without a location asks for one.
+  for (const id of ["m-sort", "c-sort"]) {
+    $(id).addEventListener("change", () => {
+      if ($(id).value !== "near" || state.here || state.locating) return;
+      track("location_toggle", { action: "request" });
+      locate();
+    });
+  }
+  $("location-notice-close").addEventListener("click", () => {
+    state.locationError = "";
+    render();
+  });
   $("c-sort").addEventListener("change", () => track("filter_change", { control: "c-sort", value: $("c-sort").value }));
   $("cq").addEventListener("input", render);
   $("c-clear-search").addEventListener("click", () => {
