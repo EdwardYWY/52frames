@@ -140,6 +140,11 @@ How it works:
 
 The browser fallback uses the chains' public website endpoints and requires their CORS headers.
 
+**Sizes** in `site/css/style.css` come from one scale at the top of the file: font sizes (`--fs-*`),
+spacing (`--sp-*`, 4 px steps), line heights, letter spacing and control heights.
+`tests/js/css-scale.test.mjs` fails on a raw px font size, gap, padding or margin (1–3 px nudges and
+the seat map excepted), so pick the nearest step instead of a one-off value.
+
 ```
 site/
   index.html        the page
