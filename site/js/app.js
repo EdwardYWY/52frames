@@ -504,30 +504,8 @@ function renderPickStrip(strip, name, dates) {
   for (const input of strip.querySelectorAll("input")) input.checked = input.value === state.date;
 }
 
-/**
- * Date strips scroll sideways without a scrollbar: ‹ › buttons beside the strip when its dates
- * don't all fit (dimmed at an end), and the mouse wheel scrolls them on a computer.
- */
-const stripUpdates = [];
-function enhanceStrip(strip) {
-  const wrap = el("div", { class: "strip" });
-  strip.before(wrap);
-  const nav = (dir, label, glyph) =>
-    el("button", {
-      type: "button", class: `strip-nav ${dir}`, "aria-label": label, tabindex: "-1",
-      onclick: () => strip.scrollBy({ left: (dir === "prev" ? -0.8 : 0.8) * strip.clientWidth, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }),
-    }, el("span", { "aria-hidden": "true" }, glyph));
-  const prev = nav("prev", "Earlier dates", "‹");
-  const next = nav("next", "Later dates", "›");
-  wrap.append(prev, strip, next);
-  const update = () => {
-    wrap.classList.toggle("scrolls", strip.scrollWidth > strip.clientWidth + 1);
-    prev.disabled = strip.scrollLeft <= 1;
-    next.disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
-  };
-  strip.addEventListener("scroll", update, { passive: true });
-  new ResizeObserver(update).observe(strip);
-  // A vertical wheel scrolls the dates, until they reach an end; then the page scrolls as usual.
+/** Date strips scroll sideways; on a computer the mouse wheel scrolls them too, until they reach an end. */
+function wheelScrolls(strip) {
   strip.addEventListener("wheel", (e) => {
     if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
     const max = strip.scrollWidth - strip.clientWidth;
@@ -535,7 +513,6 @@ function enhanceStrip(strip) {
     e.preventDefault();
     strip.scrollLeft += e.deltaY;
   }, { passive: false });
-  stripUpdates.push(update);
 }
 
 function pickDate(iso) {
@@ -1499,7 +1476,6 @@ function render() {
   if (state.movieKey) renderSheet();
   renderStars();
   for (const d of dropdowns) d.sync();
-  for (const update of stripUpdates) update();
 }
 
 // ---------------------------------------------------------------- wiring
@@ -1529,7 +1505,7 @@ function init() {
     if (id === "m-cinema") options.header = $("m-chains");
     dropdowns.push(enhanceSelect($(id), options));
   }
-  for (const id of ["dates", "c-dates", "v-dates", "m-dates"]) enhanceStrip($(id));
+  for (const id of ["dates", "c-dates", "v-dates", "m-dates"]) wheelScrolls($(id));
   tickClock();
   setInterval(tickClock, 15000);
   // Back to top on the movie list too, once it has scrolled a screen or so.

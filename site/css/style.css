@@ -660,19 +660,16 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
   * { scrollbar-width: thin; scrollbar-color: var(--ink-2) transparent; }
 }
 
-#m-dates, .dates { display: flex; overflow-x: auto; padding: 3px; scrollbar-width: none; }
-#m-dates::-webkit-scrollbar, .dates::-webkit-scrollbar { display: none; }
-/* ‹ › beside a date strip whose dates don't all fit (app.js enhanceStrip); dimmed at an end. */
-.strip { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
-.strip > .dates, .strip > #m-dates { flex: 1; min-width: 0; }
-.strip-nav {
-  display: none; flex: none; place-items: center; width: var(--h-sm); height: var(--h-sm); margin: 0; padding: 0;
-  font: var(--w-display) var(--fs-xl)/var(--lh-tight) var(--f-display); color: var(--ink); cursor: pointer;
-  background: var(--surface-2); border: 1px solid var(--ink-2); border-radius: var(--r-control);
+/* The scrollbar sits a step below the dates, slim and in the panel's colours. */
+#m-dates, .dates {
+  display: flex; overflow-x: auto; padding: 3px 3px var(--sp-3);
+  scrollbar-width: thin; scrollbar-color: var(--muted) transparent;
 }
-.strip.scrolls .strip-nav { display: grid; }
-.strip-nav:hover:not(:disabled) { background: var(--band); color: var(--band-ink); }
-.strip-nav:disabled { cursor: default; opacity: 0.3; }
+#m-dates::-webkit-scrollbar, .dates::-webkit-scrollbar { height: 6px; }
+#m-dates::-webkit-scrollbar-track, .dates::-webkit-scrollbar-track { background: transparent; }
+#m-dates::-webkit-scrollbar-thumb, .dates::-webkit-scrollbar-thumb { background: var(--muted); border: 0; }
+#m-dates:hover::-webkit-scrollbar-thumb, .dates:hover::-webkit-scrollbar-thumb { background: var(--ink-2); }
+#m-dates::-webkit-scrollbar-thumb:hover, .dates::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 #m-dates .day, .dates .day { flex: 0 0 48px; }
 .dates .day-all { flex-basis: 56px; }
 .toolbar .field-dates { min-width: 0; }
