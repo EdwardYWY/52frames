@@ -660,7 +660,16 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
   * { scrollbar-width: thin; scrollbar-color: var(--ink-2) transparent; }
 }
 
-#m-dates, .dates { display: flex; overflow-x: auto; padding: 3px; }
+/* The scrollbar sits a step below the dates, slim and in the panel's colours. */
+#m-dates, .dates {
+  display: flex; overflow-x: auto; padding: 3px 3px var(--sp-3);
+  scrollbar-width: thin; scrollbar-color: var(--muted) transparent;
+}
+#m-dates::-webkit-scrollbar, .dates::-webkit-scrollbar { height: 6px; }
+#m-dates::-webkit-scrollbar-track, .dates::-webkit-scrollbar-track { background: transparent; }
+#m-dates::-webkit-scrollbar-thumb, .dates::-webkit-scrollbar-thumb { background: var(--muted); border: 0; }
+#m-dates:hover::-webkit-scrollbar-thumb, .dates:hover::-webkit-scrollbar-thumb { background: var(--ink-2); }
+#m-dates::-webkit-scrollbar-thumb:hover, .dates::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 #m-dates .day, .dates .day { flex: 0 0 48px; }
 .dates .day-all { flex-basis: 56px; }
 .toolbar .field-dates { min-width: 0; }
@@ -676,6 +685,20 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
 .chip span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip-x { display: grid; place-items: center; width: 18px; height: 18px; font-size: var(--fs-md); line-height: var(--lh-tight); background: rgb(0 0 0 / 0.14); }
 .chip:hover .chip-x { background: var(--band-ink); color: var(--accent); }
+
+/* A failed location request, pinned to the bottom of the screen on every page and over the movie view. */
+.notice {
+  position: fixed; left: 50%; bottom: var(--sp-4); z-index: 70; transform: translateX(-50%);
+  display: flex; align-items: flex-start; gap: var(--sp-3); width: min(560px, calc(100vw - 2 * var(--sp-4)));
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4); background: var(--warn-bg); color: var(--ink);
+  border: 1px solid var(--warn); border-radius: var(--r-panel); box-shadow: 0 14px 34px rgb(0 0 0 / 0.35);
+}
+.notice p { margin: 0; flex: 1; font-size: var(--fs-sm); line-height: var(--lh-body); }
+.notice-close {
+  flex: none; display: grid; place-items: center; width: var(--h-sm); height: var(--h-sm); padding: 0;
+  font: var(--fs-lg)/var(--lh-tight) var(--f-label); color: var(--ink); background: transparent; border: 1px solid var(--warn); cursor: pointer;
+}
+.notice-close:hover { background: var(--warn); color: var(--on-accent); }
 .clear-filters {
   display: inline-flex; align-items: center; height: var(--h-sm); margin-top: var(--sp-3); padding: 0 var(--sp-3);
   font: var(--w-display) var(--fs-sm)/var(--lh-tight) var(--f-display); letter-spacing: var(--ls-caps); text-transform: uppercase;
