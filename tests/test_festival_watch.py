@@ -116,6 +116,12 @@ class FestivalWatchTest(unittest.TestCase):
         keys = sorted(a.key for a in self.run_checks())
         self.assertEqual(keys, ["tgv-movie:euff-opening", "tgv-movie:tatami"])
 
+    def test_matches_the_euff26_name(self):
+        names = ("EUFF26: The Shepherd", "The Shepherd (EUFF26)", "EUFF 26 Opening", "EUFF2026")
+        for name in names:
+            self.assertTrue(fw.is_festival_movie(movie("x", name)), name)
+        self.assertFalse(fw.is_festival_movie(movie("x", "Reuffle")))
+
     def test_alerts_on_a_new_festival_tab_but_not_other_new_tabs(self):
         self.run_checks()
         self.tgv.list_info = {

@@ -60,6 +60,7 @@ NEWS_PAGE = "https://www.tgv.com.my/news"
 FESTIVAL_LIST_KEY = "movielist-film-festival"
 
 GOOGLE_NEWS_QUERIES = (
+    "EUFF26",
     '"European Film Festival" Malaysia',
     '"EU Film Festival" Malaysia',
     "EUFF Malaysia",
@@ -72,7 +73,8 @@ NEWS_MAX_AGE = timedelta(days=45)
 # A film or news item is about the festival if it says so plainly. A bare "festival" is not
 # enough (e.g. TGV synopses mention the Hungry Ghost Festival).
 FESTIVAL_RE = re.compile(
-    r"europ\w*\s+(union\s+)?film\s+fest|\bEU\s+film\s+fest|\bEUFF\b|\(EUFF|EUFF\s*20\d\d",
+    # "EUFF", "EUFF26", "EUFF 26", "(EUFF2026)" but not words that merely contain "euff".
+    r"europ\w*\s+(union\s+)?film\s+fest|\bEU\s+film\s+fest|\bEUFF(\s*(20)?\d\d)?\b",
     re.IGNORECASE,
 )
 FESTIVAL_LIST_RE = re.compile(r"festival|europ|euff", re.IGNORECASE)
