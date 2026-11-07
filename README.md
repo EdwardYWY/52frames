@@ -229,6 +229,8 @@ these events:
 - **Films listed:** a film appears in TGV's festival list (`movielist-film-festival`). TGV has
   created this list but it is still empty. The watcher also catches a new festival tab, or a film
   in any TGV list whose title or synopsis mentions the European Film Festival or EUFF.
+  It also watches for the announced EUFF26 films by title: *Silent Friend*, *Fjord* and
+  *Sentimental Value* (`FESTIVAL_TITLES` in `cinema_showtimes/festival_watch.py`).
 - **Tickets open (urgent):** TGV publishes booking dates for one of those films.
 - **News:** TGV news, or Google News articles from the last 45 days about the festival in Malaysia.
 
