@@ -220,6 +220,36 @@ site/            the browser-only web page (GitHub Pages)
 tests/           Python tests; tests/js/ has the Node tests for site/js/
 ```
 
+## European Film Festival alerts
+
+[`.github/workflows/festival-watch.yml`](.github/workflows/festival-watch.yml) runs
+`python3 -m cinema_showtimes.festival_watch` every 10 minutes and alerts you once for each of
+these events:
+
+- **Films listed:** a film appears in TGV's festival list (`movielist-film-festival`). TGV has
+  created this list but it is still empty. The watcher also catches a new festival tab, or a film
+  in any TGV list whose title or synopsis mentions the European Film Festival or EUFF.
+- **Tickets open (urgent):** TGV publishes booking dates for one of those films.
+- **News:** TGV news, or Google News articles from the last 45 days about the festival in Malaysia.
+
+Set up (repository **Settings → Secrets and variables → Actions**):
+
+1. Install the free **ntfy** app (Android/iOS) and subscribe to a hard-to-guess topic name,
+   e.g. `euff-tgv-<random>`. Anyone who knows the name can read it. Save that name as the
+   `NTFY_TOPIC` secret. Ticket alerts use ntfy's urgent priority. On Android you can let that
+   priority break through Do Not Disturb.
+2. Optional phone call when tickets open: message [@CallMeBot_txtbot](https://t.me/CallMeBot_txtbot)
+   on Telegram once to authorise it, then save your Telegram `@username` as
+   `CALLMEBOT_TELEGRAM_USER`.
+3. Every alert also opens a GitHub issue here, so GitHub's app and email notify you too.
+4. Run the workflow by hand (**Actions → Festival watch → Run workflow**) with *Send a test
+   alert* ticked to check every channel.
+
+Instagram is not checked because it doesn't let anyone read profiles without logging in. For
+Instagram posts, open each account in the Instagram app, tap the bell and turn on posts and
+stories. Scheduled workflows only run from the default branch. GitHub pauses them after 60 days
+without repository activity.
+
 ## Tests
 
 Offline tests run against trimmed real API responses in `tests/fixtures/`:
