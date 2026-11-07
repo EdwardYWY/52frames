@@ -1,0 +1,59 @@
+name: Festival watch (European Film Festival on TGV)
+
+# Checks TGV and Google News every 10 minutes and alerts when European Film Festival films are
+# listed on TGV, when their tickets go on sale, or when there is festival news.
+# See cinema_showtimes/festival_watch.py. Set up alerts with repository secrets:
+#   NTFY_TOPIC               (required) your ntfy.sh topic name: push notifications to your phone
+#   CALLMEBOT_TELEGRAM_USER  (optional) your Telegram @username: a phone call when tickets open
+# Each alert also opens a GitHub issue in this repository.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub can delay scheduled runs by a few minutes when busy.
+    - cron: "3-59/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test alert (checks every channel) instead of checking"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: festival-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # What was already alerted lives in the Actions cache, so each thing is alerted once.
+      - uses: actions/cache/restore@v4
+        with:
+          path: festival-state.json
+          key: festival-watch-${{ github.run_id }}
+          restore-keys: festival-watch-
+      - name: Check and alert
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          CALLMEBOT_TELEGRAM_USER: ${{ secrets.CALLMEBOT_TELEGRAM_USER }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ inputs.test_alert }}" = "true" ]; then
+            python3 -m cinema_showtimes.festival_watch --test-alert
+          else
+            python3 -m cinema_showtimes.festival_watch --state festival-state.json
+          fi
+      - uses: actions/cache/save@v4
+        if: always() && hashFiles('festival-state.json') != ''
+        with:
+          path: festival-state.json
+          key: festival-watch-${{ github.run_id }}-${{ github.run_attempt }}
