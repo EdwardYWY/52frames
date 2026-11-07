@@ -78,6 +78,14 @@ FESTIVAL_RE = re.compile(
     re.IGNORECASE,
 )
 FESTIVAL_LIST_RE = re.compile(r"festival|europ|euff", re.IGNORECASE)
+
+# Films announced for EUFF26. Matched against the TGV title and web address only, not the
+# synopsis, so a story that merely mentions a fjord doesn't count.
+FESTIVAL_TITLES = ("Silent Friend", "Fjord", "Sentimental Value")
+FESTIVAL_TITLE_RE = re.compile(
+    r"\b(" + "|".join(re.escape(t).replace(r"\ ", r"[\s-]+") for t in FESTIVAL_TITLES) + r")\b",
+    re.IGNORECASE,
+)
 MALAYSIA_RE = re.compile(
     r"malaysia|kuala lumpur|\bKL\b|penang|kuching|johor|selangor|\bTGV\b|\bGSC\b",
     re.IGNORECASE,
@@ -140,7 +148,8 @@ def _movie_text(movie: dict) -> str:
 
 
 def is_festival_movie(movie: dict) -> bool:
-    return bool(FESTIVAL_RE.search(_movie_text(movie)))
+    title = f"{movie.get('name', '')} {movie.get('itemkey', '')}"
+    return bool(FESTIVAL_RE.search(_movie_text(movie)) or FESTIVAL_TITLE_RE.search(title))
 
 
 def _get_list(fetch: Fetch, key: str) -> list[dict] | None:
@@ -435,7 +444,11 @@ def main(argv: list[str] | None = None) -> int:
         alert = Alert(
             key="test",
             title="Festival watch test alert",
-            body="Notifications work. You'll hear from this when EUFF tickets open on TGV.",
+            body=(
+                "Notifications work. Watching TGV for EUFF26 films, including "
+                + ", ".join(FESTIVAL_TITLES)
+                + ". You'll hear from this when they're listed and when tickets open."
+            ),
             url="https://www.tgv.com.my/movies",
             urgent=True,
         )

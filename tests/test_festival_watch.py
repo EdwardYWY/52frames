@@ -122,6 +122,26 @@ class FestivalWatchTest(unittest.TestCase):
             self.assertTrue(fw.is_festival_movie(movie("x", name)), name)
         self.assertFalse(fw.is_festival_movie(movie("x", "Reuffle")))
 
+    def test_matches_announced_euff26_titles_by_title_only(self):
+        for name, key in (
+            ("Silent Friend", "silent-friend"),
+            ("FJORD", "fjord-2026"),
+            ("Sentimental Value (Norwegian)", "x"),
+            ("Untitled", "sentimental-value"),
+        ):
+            self.assertTrue(fw.is_festival_movie(movie(key, name)), name)
+        self.assertFalse(fw.is_festival_movie(movie("x", "Frozen 3", synopsis="a frozen fjord")))
+        self.assertFalse(fw.is_festival_movie(movie("x", "Fjords of Norway")))
+
+    def test_announced_title_in_coming_soon_alerts_then_tickets(self):
+        self.run_checks()
+        self.tgv.lists["comingsoon"] = tgv_list(movie("fjord", "Fjord", recid="rf"))
+        self.assertEqual([a.key for a in self.run_checks()], ["tgv-movie:fjord"])
+        self.tgv.booking["rf"] = ["2026-11-25"]
+        alerts = self.run_checks()
+        self.assertEqual([a.key for a in alerts], ["tgv-tickets:fjord"])
+        self.assertTrue(alerts[0].urgent)
+
     def test_alerts_on_a_new_festival_tab_but_not_other_new_tabs(self):
         self.run_checks()
         self.tgv.list_info = {
