@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { makeShowtime } from "../../site/js/models.js";
 import { parseGscCinemas, parseGscShowtimes, parseTgvCinemas, parseTgvShowtimes } from "../../site/js/providers.js";
-import { decodeSnapshot, encodeSnapshot, loadSnapshot } from "../../site/js/snapshot.js";
+import { decodeSnapshot, encodeSnapshot, loadSnapshot, snapshotRegressions } from "../../site/js/snapshot.js";
 import { parseXml } from "../../scripts/xml.mjs";
 
 const fixture = (name) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8");
@@ -50,12 +50,17 @@ test("snapshot is much smaller than the plain showtimes", () => {
   assert.ok(packed < plain / 2, `${packed} vs ${plain}`);
 });
 
-test("loadSnapshot: stale or missing files fall back (null)", async () => {
+test("loadSnapshot: an old file is kept and marked stale; a very old or missing one falls back (null)", async () => {
   const snap = encodeSnapshot(sampleDays(), "2026-10-14T06:00:00.000Z");
   const serve = (body, ok = true) => async () => ({ ok, json: async () => body });
   const fresh = await loadSnapshot({ fetch: serve(snap), now: Date.parse("2026-10-14T10:00:00Z") });
   assert.equal(fresh.showtimes.length, 14);
-  assert.equal(await loadSnapshot({ fetch: serve(snap), now: Date.parse("2026-10-15T10:00:00Z") }), null);
+  assert.equal(fresh.stale, false);
+  const old = await loadSnapshot({ fetch: serve(snap), now: Date.parse("2026-10-15T10:00:00Z") });
+  assert.equal(old.showtimes.length, 14);
+  assert.equal(old.stale, true);
+  assert.equal(await loadSnapshot({ fetch: serve(snap), now: Date.parse("2026-10-16T10:00:00Z") }), null);
+  assert.equal(await loadSnapshot({ fetch: serve({ ...snap, generated_at: "nonsense" }) }), null);
   assert.equal(await loadSnapshot({ fetch: serve(null, false) }), null);
   assert.equal(await loadSnapshot({ fetch: async () => { throw new Error("offline"); } }), null);
   assert.ok(makeShowtime);
@@ -71,4 +76,19 @@ test("cinemas sharing a GSC code (regular + premium hall) stay separate", () => 
   );
   assert.deepEqual(decoded.showtimes.map((s) => s.cinema_name).sort(), [prestige.name, regular.name].sort());
   assert.equal(decoded.cinemas.length, 2);
+});
+
+test("snapshotRegressions: a chain that lost most of its cinemas blocks the refresh", () => {
+  // Ten cinemas per chain, each with one show; then GSC answers with a one-cinema list.
+  const pack = (gsc, tgv) => {
+    const cinemas = [...Array(gsc).keys()].map((i) => ["GSC", String(i), `G${i}`]).concat([...Array(tgv).keys()].map((i) => ["TGV", String(i), `T${i}`]));
+    return { cinemas, shows: cinemas.map((_, i) => [0, i, 0, 600, 0, 0, 0]) };
+  };
+  assert.deepEqual(snapshotRegressions(pack(10, 10), pack(10, 10)), []);
+  assert.deepEqual(snapshotRegressions(pack(10, 10), pack(7, 12)), []);
+  assert.deepEqual(snapshotRegressions(pack(10, 10), pack(1, 10)), ["GSC: cinemas with shows 1, down from 10"]);
+  assert.deepEqual(snapshotRegressions(pack(10, 10), pack(10, 0)), ["TGV: cinemas with shows 0, down from 10"]);
+  // A recovery (the published one was the short one) and a first deploy are fine.
+  assert.deepEqual(snapshotRegressions(pack(1, 10), pack(10, 10)), []);
+  assert.deepEqual(snapshotRegressions(null, pack(10, 10)), []);
 });

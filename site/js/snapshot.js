@@ -7,12 +7,16 @@
 // numbers:  [day, cinema, movie, minute, experience, hall, soldOut]
 // where minute counts from midnight of the business day (>= 1440 means after midnight).
 
-import { addDays, makeShowtime } from "./models.js?v=30";
-import { tgvCinemaName } from "./places.js?v=30";
+import { addDays, makeShowtime } from "./models.js?v=31";
+import { tgvCinemaName } from "./places.js?v=31";
 
 export const SNAPSHOT_URL = "data/showtimes.json";
-/** Older than this, the page fetches live instead (the job runs every 6 h; cron can run late). */
+/** Older than this, the snapshot is due a refresh: the page says how old it is, and a push re-fetches. */
 export const SNAPSHOT_MAX_AGE_MS = 13 * 3600 * 1000;
+/** Older than this, the page stops using it and fetches live instead (scheduled runs can be skipped for hours). */
+export const SNAPSHOT_STALE_LIMIT_MS = 36 * 3600 * 1000;
+/** A refresh listing fewer than this share of a chain's cinemas (with shows) than before isn't published. */
+export const SNAPSHOT_MIN_CINEMA_SHARE = 0.6;
 export const SNAPSHOT_VERSION = 3;
 
 const MOVIE_FIELDS = [
@@ -138,14 +142,42 @@ export function decodeSnapshot(snap) {
   return { days: snap.days, errors: snap.errors || {}, cinemas, showtimes, generatedAt: snap.generated_at };
 }
 
-/** Fetch and unpack the snapshot, or null when it's missing, broken or too old. */
-export async function loadSnapshot({ url = SNAPSHOT_URL, fetch: fetchImpl = globalThis.fetch, now = Date.now() } = {}) {
+/** Per chain, how many cinemas have at least one show in a packed snapshot. */
+function cinemasWithShows(snap) {
+  const seen = new Set((snap?.shows || []).map((row) => row[1]));
+  const counts = {};
+  for (const index of seen) {
+    const chain = snap.cinemas[index]?.[0];
+    if (chain) counts[chain] = (counts[chain] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * Why a new packed snapshot shouldn't replace the published one: a chain that had cinemas with
+ * shows now has far fewer (its API answered with a short list, as GSC's has done overnight).
+ * Returns one message per chain, [] when the new one is fine.
+ */
+export function snapshotRegressions(previous, next, minShare = SNAPSHOT_MIN_CINEMA_SHARE) {
+  const before = cinemasWithShows(previous);
+  const after = cinemasWithShows(next);
+  return Object.entries(before)
+    .filter(([chain, count]) => count >= 5 && (after[chain] || 0) < count * minShare)
+    .map(([chain, count]) => `${chain}: cinemas with shows ${after[chain] || 0}, down from ${count}`);
+}
+
+/**
+ * Fetch and unpack the snapshot, or null when it's missing, broken or older than `maxAge`.
+ * `stale` is true once it's past its refresh time: still shown, with its age.
+ */
+export async function loadSnapshot({ url = SNAPSHOT_URL, fetch: fetchImpl = globalThis.fetch, now = Date.now(), maxAge = SNAPSHOT_STALE_LIMIT_MS } = {}) {
   try {
     const res = await fetchImpl(url, { cache: "no-cache" });
     if (!res.ok) return null;
     const snap = await res.json();
-    if (now - Date.parse(snap.generated_at) > SNAPSHOT_MAX_AGE_MS) return null;
-    return decodeSnapshot(snap);
+    const age = now - Date.parse(snap.generated_at);
+    if (!(age <= maxAge)) return null;
+    return { ...decodeSnapshot(snap), stale: age > SNAPSHOT_MAX_AGE_MS };
   } catch {
     return null; // No snapshot (local dev, first deploy, broken file): fetch live instead.
   }

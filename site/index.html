@@ -7,8 +7,8 @@
 <meta name="description" content="GSC and TGV showtimes across Malaysia, on one page.">
 <title>52 Frames</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Cpath d='M6 6h14l6 6v14H6z' fill='%23ffd200'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=29">
-<script type="module" src="js/app.js?v=30"></script>
+<link rel="stylesheet" href="css/style.css?v=31">
+<script type="module" src="js/app.js?v=31"></script>
 </head>
 <body>
 
@@ -96,7 +96,8 @@
 
   <footer class="foot">
     <p>Times are Malaysia time. Tap a time to book on the chain's own site; seats are chosen there.
-      ☆ a cinema to keep it at the top; your stars stay in this browser only, and other settings reset on each visit.
+      ☆ a cinema to keep it at the top; your stars, region and chain choice stay in this browser only, and other settings reset on each visit.
+      The address keeps the filters in use, so a copied link opens the same view.
       Struck-through times are sold out; <b class="mono">+1</b> marks shows after midnight.</p>
     <p>Google Analytics measures visits and feature usage, with advertising features disabled.
       Search text and your precise location are not included in our analytics events.</p>
@@ -203,7 +204,11 @@
       </div>
       <div class="date-strip" id="m-dates" role="radiogroup" aria-label="Date"></div>
     </header>
-    <aside class="m-side">
+    <aside class="m-side folded" id="m-side">
+      <button type="button" class="filters-toggle m-more" id="m-more" aria-expanded="false" aria-controls="m-facts">
+        <span class="filters-title">Details</span><span class="filters-summary" id="m-brief"></span>
+        <span class="chev" aria-hidden="true"></span>
+      </button>
       <div class="m-poster" id="m-poster"></div>
       <dl class="m-facts" id="m-facts"></dl>
     </aside>

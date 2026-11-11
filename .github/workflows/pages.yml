@@ -4,11 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Refresh the shared showtimes snapshot every 6 hours (00:17, 06:17, 12:17, 18:17 UTC,
-  # i.e. 08:17, 14:17, 20:17, 02:17 in Malaysia). Off the hour, since :00 runs are often delayed.
+  # Try every 3 hours, off the hour (GitHub delays or skips scheduled runs, often for hours). A run
+  # fetches a new snapshot only when the published one is over 5 hours old, so the chains still see
+  # about one refresh every 6 hours.
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 */3 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish even if a chain lists far fewer cinemas than before"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,13 +55,20 @@ jobs:
           node-version: "22"
       - name: Copy the site
         run: cp -r site _site
-      - name: Showtimes snapshot (fetch on schedule; reuse the published one on a code push)
+      - name: Showtimes snapshot (fetch when the published one is old; reuse it on a code push)
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             node scripts/snapshot.mjs --out _site/data/showtimes.json \
-              --reuse https://edwardywy.github.io/52frames/data/showtimes.json
+              --reuse https://edwardywy.github.io/52frames/data/showtimes.json \
+              --guard https://edwardywy.github.io/52frames/data/showtimes.json
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            node scripts/snapshot.mjs --out _site/data/showtimes.json \
+              --reuse https://edwardywy.github.io/52frames/data/showtimes.json --reuse-hours 5 \
+              --guard https://edwardywy.github.io/52frames/data/showtimes.json
           else
-            node scripts/snapshot.mjs --out _site/data/showtimes.json
+            node scripts/snapshot.mjs --out _site/data/showtimes.json \
+              --guard https://edwardywy.github.io/52frames/data/showtimes.json \
+              --force "${{ inputs.force }}"
           fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -7,6 +7,7 @@ import {
   createCache,
   filterShowtimes,
   groupByMovie,
+  lightPosters,
   posterCandidates,
   summarizeMovies,
 } from "../../site/js/aggregator.js";
@@ -349,4 +350,14 @@ test("GSC language codes and TGV language names group together", async () => {
   assert.equal(normalizeLanguage("CAN"), normalizeLanguage("Cantonese"));
   assert.equal(normalizeLanguage("THA"), normalizeLanguage("Thai"));
   assert.equal(movieGroupKey({ movie_key: "x", language: "IND" }), movieGroupKey({ movie_key: "x", language: "Bahasa Indonesia" }));
+});
+
+test("lightPosters: a small poster takes the light one alone, or GSC's smallest when that's all there is", () => {
+  const gscBig = { url: "https://poster.gsc.com.my/2026/x_big.jpg", width: 500 };
+  const gscMed = { url: "https://poster.gsc.com.my/2026/x_med.jpg", width: 232 };
+  const tgv = { url: "https://d9s3e2ooa0od7.cloudfront.net/assets/x/x.jpg", width: 436 };
+  assert.deepEqual(lightPosters([gscBig, tgv, gscMed]), [tgv]);
+  assert.deepEqual(lightPosters([gscBig, gscMed]), [gscMed]);
+  assert.deepEqual(lightPosters([gscBig, gscMed], true), [gscBig, gscMed]);
+  assert.deepEqual(lightPosters([]), []);
 });

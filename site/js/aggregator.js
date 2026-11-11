@@ -2,7 +2,7 @@
 // Ports cinema_showtimes/aggregator.py, plus a sessionStorage cache for the browser.
 
 export const CONCURRENCY = 6;
-import { movieGroupKey, normalizeLanguage, untaggedTitle } from './models.js?v=30';
+import { movieGroupKey, normalizeLanguage, untaggedTitle } from './models.js?v=31';
 export const CACHE_TTL_MS = 10 * 60 * 1000;
 // Bump when the cached shape of a showtime changes.
 const CACHE_PREFIX = "showtimes:v3:";
@@ -70,6 +70,20 @@ export function posterCandidates(shows) {
     if (s.poster_small_url && !seen.has(s.poster_small_url)) seen.set(s.poster_small_url, small || 150);
   }
   return [...seen].map(([url, width]) => ({ url, width })).sort((a, b) => b.width - a.width);
+}
+
+// GSC's posters are PNGs (about 1 MB at 500 px, 230 KB at 232 px); TGV's 436 px JPEG is about 50 KB.
+const HEAVY_POSTER = /\/\/poster\.gsc\.com\.my\//;
+
+/**
+ * Poster candidates for a small poster (grid cards, cinema pages): a light one alone when the
+ * movie has one. A movie with only GSC's gets the smallest, unless `allowHeavy` (wide screens,
+ * where the browser may pick the sharper one) - so a phone doesn't fetch megabytes per card.
+ */
+export function lightPosters(candidates, allowHeavy = false) {
+  const light = candidates.filter((c) => !HEAVY_POSTER.test(c.url));
+  if (light.length) return light.slice(0, 1);
+  return allowHeavy ? candidates : candidates.slice(-1);
 }
 
 /** One summary per movie: the data behind a poster card. */
