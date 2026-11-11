@@ -506,7 +506,9 @@ a.time:hover, a.time.holding { background: var(--band); color: var(--band-ink); 
 a.time:hover i, a.time:hover .overnight, a.time.holding i, a.time.holding .overnight { color: var(--band-accent); }
 .time.full, .trow.full { opacity: 0.5; }
 .time.full b, .trow.full .trow-time { text-decoration: line-through; text-decoration-thickness: 2px; }
-.time.past, .trow.past { opacity: 0.4; }
+/* Dimmed, but still readable: 0.6 keeps the time above 4.5:1 on the page background. */
+.time.past, .trow.past { opacity: 0.6; }
+.started-note { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) 0; color: var(--muted); font-size: var(--fs-sm); }
 
 /* By-time list. */
 .trows { border-top: 1px solid var(--line); }
@@ -585,7 +587,11 @@ a.trow:hover .trow-what, a.trow:hover .trow-go, a.trow.holding .trow-what, a.tro
 }
 
 @media (max-width: 560px) {
-  :root { --gap-section: var(--sp-4); }
+  /* The smallest labels go up a step on phones. */
+  :root { --gap-section: var(--sp-4); --fs-2xs: 11px; }
+  /* The movie view's poster and facts fold behind "Details", so the schedule starts on the first screen. */
+  .m-more { grid-column: 1 / -1; }
+  .m-side.folded .m-poster, .m-side.folded .m-facts { display: none; }
   .m-controls { position: static; margin: 0 0 var(--sp-3); padding: 0; border-bottom: 0; }
   .to-top { margin-right: var(--sp-3); }
   /* Phones: dates stay visible; the five filters fold behind one button that says what's set. */

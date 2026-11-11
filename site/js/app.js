@@ -2,16 +2,16 @@
 // sheet with its schedule, and a panel to manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, summarizeMovies, uniqueShows } from "./aggregator.js?v=30";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=30";
-import { GSC_PREMIUM_HALL_GROUPS, TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=30";
-import { createProviders, domParseXml } from "./providers.js?v=30";
-import { enhanceSelect } from "./select.js?v=30";
-import { collectCatalogue } from "./catalog.js?v=30";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=30";
-import { loadSnapshot } from "./snapshot.js?v=30";
-import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=30";
-import { enableSeatPreview } from "./seatmap.js?v=30";
+import { collectShowtimes, createCache, filterShowtimes, lightPosters, summarizeMovies, uniqueShows } from "./aggregator.js?v=31";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=31";
+import { GSC_PREMIUM_HALL_GROUPS, TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=31";
+import { createProviders, domParseXml } from "./providers.js?v=31";
+import { enhanceSelect } from "./select.js?v=31";
+import { collectCatalogue } from "./catalog.js?v=31";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=31";
+import { loadSnapshot } from "./snapshot.js?v=31";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=31";
+import { enableSeatPreview } from "./seatmap.js?v=31";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -50,7 +50,7 @@ function writeLocal(key, value) {
 }
 
 /** One day of data for one view: the main grid, or the movie view (each has its own date). */
-const newView = (date) => ({ date, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: false, source: null, controller: null });
+const newView = (date) => ({ date, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: false, source: null, stale: false, controller: null });
 
 const state = {
   main: newView(todayMyt()),
@@ -62,6 +62,8 @@ const state = {
   sheet: newView(todayMyt()),
   pendingSheetDate: null, // a search result opens the movie on the day it next shows
   movieKey: null, // open movie, or null for the grid
+  showStarted: false, // the movie view lists shows that have already started
+  autoDate: null, // the date a cinema page picked for itself when opened from the list on "All"
   openVenues: new Set(),
   lastSummary: new Map(), // movie key -> last summary, so the sheet keeps its header between dates
   // Starred cinemas: venue key "CHAIN|Name" -> {chain, name, region}. Kept in localStorage.
@@ -391,7 +393,7 @@ let starsCinemas = null;
 async function openStars() {
   track("stars_open");
   $("stars").hidden = false;
-  document.body.classList.add("locked");
+  syncModal();
   $("stars").querySelector(".close").focus({ preventScroll: true });
   if (!$("stars-region").options.length) {
     $("stars-region").replaceChildren(...REGIONS.map((r) => new Option(r, r)), new Option("All Malaysia", ""));
@@ -407,7 +409,7 @@ async function openStars() {
 
 function closeStars() {
   $("stars").hidden = true;
-  document.body.classList.toggle("locked", Boolean(state.movieKey));
+  syncModal();
   $("open-stars").focus({ preventScroll: true });
 }
 
@@ -483,9 +485,13 @@ function setPoster(img, candidates) {
   img.closest(".poster")?.classList.remove("no-img");
 }
 
-function posterFrame(summary, sizes) {
+// Small posters (grid cards, cinema pages) take a light file; only wide screens may pick GSC's
+// megabyte PNG when it's all a movie has. The movie view still gets the sharpest poster.
+const smallPosters = (summary) => lightPosters(summary.posters, matchMedia("(min-width: 861px)").matches);
+
+function posterFrame(summary, sizes, posters = summary.posters) {
   const frame = el("div", { class: "poster" }, el("span", { class: "poster-fallback", "aria-hidden": "true" }, summary.title));
-  const img = posterImage(summary.posters, sizes, `${summary.title} poster`);
+  const img = posterImage(posters, sizes, `${summary.title} poster`);
   if (img) frame.prepend(img);
   else frame.classList.add("no-img");
   return frame;
@@ -723,7 +729,7 @@ async function load(view = state.main) {
   const controller = new AbortController();
   const current = () => view.controller === controller;
   const date = view.date;
-  Object.assign(view, { controller, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: true, source: null });
+  Object.assign(view, { controller, shows: [], cinemas: [], errors: [], progress: { done: 0, total: 0 }, loading: true, source: null, stale: false });
 
   const chains = selectedChains();
   const region = regionOf(view);
@@ -755,6 +761,7 @@ async function load(view = state.main) {
     rememberPlaces(view.shows);
     view.progress = { done: view.cinemas.length, total: view.cinemas.length };
     view.source = snap.generatedAt;
+    view.stale = Boolean(snap.stale);
     finishLoad(view);
     return;
   }
@@ -872,12 +879,18 @@ function renderStatus() {
   $("progress-text").textContent = progressLabel(view);
 
   const errors = view.errors;
+  // A snapshot past its refresh time is still shown (a scheduled refresh ran late or was held back).
+  const hours = view.stale && view.source ? Math.round((Date.now() - Date.parse(view.source)) / 3600000) : 0;
+  const old = hours
+    ? el("div", { class: "warn" }, el("strong", {}, `These showtimes were last updated ${plural(hours, "hour")} ago.`), " Times added or sold out since then aren't shown; the chain's booking page has the latest.")
+    : null;
   if (!errors.length) {
-    $("warnings").replaceChildren();
+    $("warnings").replaceChildren(...(old ? [old] : []));
     return;
   }
   const list = el("ul", {}, errors.map((e) => el("li", {}, e)));
   $("warnings").replaceChildren(
+    ...(old ? [old] : []),
     errors.length <= 2
       ? el("div", { class: "warn" }, el("strong", {}, "Some cinemas didn't answer, so a few times may be missing."), list)
       : el("details", { class: "warn" }, el("summary", {}, `${plural(errors.length, "cinema")} didn't answer, so a few times may be missing.`), list),
@@ -893,18 +906,18 @@ function movieCard(summary) {
     card = el(
       "a",
       { class: "card", href: `#/movie/${encodeURIComponent(summary.key)}` },
-      posterFrame(summary, GRID_SIZES),
+      posterFrame(summary, GRID_SIZES, smallPosters(summary)),
       el("div", { class: "card-body" }, el("h3"), el("div", { class: "card-shows mono" }), el("div", { class: "card-status mono" }), el("div", { class: "card-meta mono" })),
     );
     cards.set(summary.key, card);
   }
   const img = card.querySelector("img");
   if (img) img.alt = `${summary.title} poster`;
-  if (img) setPoster(img, summary.posters);
+  if (img) setPoster(img, smallPosters(summary));
   else if (summary.posters.length) {
     const frame = card.querySelector(".poster");
     frame.classList.remove("no-img");
-    frame.prepend(posterImage(summary.posters, GRID_SIZES, `${summary.title} poster`));
+    frame.prepend(posterImage(smallPosters(summary), GRID_SIZES, `${summary.title} poster`));
   }
   card.classList.remove("later");
   card.dataset.next = summary.nextDate;
@@ -1139,7 +1152,7 @@ function cinemaMovie(summary, now) {
   for (const s of summary.shows) (days.get(s.business_date) || days.set(s.business_date, []).get(s.business_date)).push(s);
   const times = (list) => el("div", { class: "times" }, list.map((s) => timeChip(s, now)));
   return el("section", { class: "cm" },
-    el("a", { class: "cm-poster", href, "data-next": opensOn, tabindex: "-1", "aria-hidden": "true" }, posterFrame(summary, CINEMA_POSTER_SIZES)),
+    el("a", { class: "cm-poster", href, "data-next": opensOn, tabindex: "-1", "aria-hidden": "true" }, posterFrame(summary, CINEMA_POSTER_SIZES, smallPosters(summary))),
     el("div", { class: "cm-body" },
       el("h3", {}, el("a", { href, "data-next": opensOn, title: "All cinemas showing this movie" }, summary.title)),
       el("div", { class: "cm-meta mono" }, [runtime(summary.duration_mins), summary.rating, summary.language].filter(Boolean).join(" · ")),
@@ -1276,6 +1289,8 @@ function renderSheet() {
   if (sheetKey !== key) {
     sheetKey = key;
     state.openVenues.clear();
+    state.showStarted = false;
+    foldFacts(true);
     $("m-sort").value = state.here ? "near" : "time";
     $("m-poster").replaceChildren(summary ? posterFrame(summary, HERO_SIZES) : el("div", { class: "poster no-img" }));
     // Start from the movies grid's cinema and hall choice; from a cinema page, from all of them.
@@ -1309,6 +1324,7 @@ function renderSheet() {
       ].filter(([, v]) => v)
     : [];
   $("m-facts").replaceChildren(...facts.flatMap(([k, v, cls]) => [el("dt", {}, k), el("dd", { class: cls || null }, v)]));
+  $("m-brief").textContent = summary ? [runtime(summary.duration_mins), summary.rating, summary.language].filter(Boolean).join(" · ") : "";
   renderDateStrip($("m-dates"), "m-date", view.date);
 
   const keys = [...new Set(all.map(venueKey))];
@@ -1318,7 +1334,21 @@ function renderSheet() {
   fillHallSelect($("m-hall"), all);
   const atCinema = matchesCinema($("m-cinema"));
   const atHall = matchesHall($("m-hall"));
-  const shows = filterShowtimes(all).filter((s) => atCinema(s) && atHall(s));
+  const matching = filterShowtimes(all).filter((s) => atCinema(s) && atHall(s));
+  // Shows that have started are folded away while there are still ones to come.
+  const started = matching.filter((s) => s.start < now).length;
+  const foldable = started > 0 && started < matching.length;
+  const shows = foldable && !state.showStarted ? matching.filter((s) => s.start >= now) : matching;
+  const startedNote = foldable
+    ? el("div", { class: "started-note" },
+        el("span", {}, state.showStarted ? `${plural(started, "show")} already started` : `${plural(started, "started show")} hidden`),
+        el("button", { type: "button", class: "link-btn mono", id: "started-toggle", "aria-pressed": String(state.showStarted), onclick: () => {
+          state.showStarted = !state.showStarted;
+          track("filter_change", { control: "started", value: String(state.showStarted) });
+          render();
+          $("started-toggle")?.focus({ preventScroll: true });
+        } }, state.showStarted ? "Hide them" : "Show them"))
+    : null;
 
   const group = selectedGroup();
   $("m-sort-field").hidden = group !== "cinema";
@@ -1346,7 +1376,7 @@ function renderSheet() {
   }
 
   if (group === "time") {
-    $("m-schedule").replaceChildren(el("div", { class: "trows" }, shows.map((s) => timeRow(s, now))));
+    $("m-schedule").replaceChildren(...(startedNote ? [startedNote] : []), el("div", { class: "trows" }, shows.map((s) => timeRow(s, now))));
     return;
   }
 
@@ -1356,7 +1386,8 @@ function renderSheet() {
     byVenue.get(venueKey(s)).push(s);
   }
   const sort = $("m-sort").value;
-  const nextStart = (list) => (list.find((s) => s.start >= now) || list[0]).start;
+  // A cinema whose shows are all over sorts after the ones with a show to come.
+  const nextStart = (list) => (list.find((s) => s.start >= now) || { start: `~${list[0].start}` }).start;
   const far = (k) => kmTo(k) ?? Infinity;
   const entries = [...byVenue].sort(
     ([ka, a], [kb, b]) =>
@@ -1372,10 +1403,25 @@ function renderSheet() {
       ka.localeCompare(kb),
   );
   const forceOpen = entries.length === 1;
-  $("m-schedule").replaceChildren(...entries.map(([k, list]) => venueBlock(k, list, now, forceOpen)));
+  $("m-schedule").replaceChildren(...(startedNote ? [startedNote] : []), ...entries.map(([k, list]) => venueBlock(k, list, now, forceOpen)));
 }
 
 // ---------------------------------------------------------------- routing
+
+/** With the movie view or the Starred panel open, the page behind can't be scrolled, clicked or tabbed into. */
+function syncModal() {
+  const stars = !$("stars").hidden;
+  const open = Boolean(state.movieKey) || stars;
+  document.body.classList.toggle("locked", open);
+  for (const node of document.querySelectorAll("body > header, body > nav, body > main, #page-top")) node.inert = open;
+  $("sheet").inert = stars;
+}
+
+/** Phones fold the movie view's poster and facts behind a Details button, so the schedule comes first. */
+function foldFacts(folded) {
+  $("m-side").classList.toggle("folded", folded);
+  $("m-more").setAttribute("aria-expanded", String(!folded));
+}
 
 let returnFocus = null;
 let cameFromGrid = false; // the movie sheet opened from a link on this page: Back is history.back()
@@ -1394,6 +1440,16 @@ function showPage(page, cinemaKey = null) {
   state.page = page;
   state.cinemaKey = cinemaKey;
   cinemaDrawn = "";
+  // Opened from the list on "All": a cinema's every date is a very long page, so start from today
+  // (or its first day with shows). Going back to the list puts "All" back unless the date was changed.
+  if (page === "cinema" && cameFromCinemas && !state.date) {
+    const days = [...new Set(cinemaShows(cinemaKey).map((s) => s.business_date))].sort();
+    state.autoDate = days.length > 1 ? days[0] : null;
+    if (state.autoDate) state.date = state.autoDate;
+  } else if (page !== "cinema") {
+    if (state.autoDate && state.date === state.autoDate) state.date = "";
+    state.autoDate = null;
+  }
   $("list").hidden = page !== "movies";
   $("cinemas-page").hidden = page !== "cinemas";
   $("cinema-page").hidden = page !== "cinema";
@@ -1407,19 +1463,20 @@ function showPage(page, cinemaKey = null) {
 }
 
 function route() {
-  const match = /^#\/movie\/(.+)$/.exec(location.hash);
+  const hash = hashPath();
+  const match = /^#\/movie\/(.+)$/.exec(hash);
   const key = match ? decodeURIComponent(match[1]) : null;
   // A movie opens over whichever page was showing (the movies grid for a direct link).
   let moved = false;
   if (!key) {
-    const cinema = /^#\/cinema\/(.+)$/.exec(location.hash);
+    const cinema = /^#\/cinema\/(.+)$/.exec(hash);
     if (cinema) moved = showPage("cinema", decodeURIComponent(cinema[1]));
-    else moved = showPage(location.hash === "#/cinemas" ? "cinemas" : "movies");
+    else moved = showPage(hash === "#/cinemas" ? "cinemas" : "movies");
   }
   const opening = key && !state.movieKey;
   state.movieKey = key;
   $("sheet").hidden = !key;
-  document.body.classList.toggle("locked", Boolean(key) || !$("stars").hidden);
+  syncModal();
   if (opening) {
     // From a cinema page outside the chosen region (a shared link), start from all of Malaysia.
     const at = state.page === "cinema" ? cinemaShows(state.cinemaKey)[0] : null;
@@ -1452,11 +1509,94 @@ function closeSheet() {
 }
 
 function reloadAll() {
+  // The region and chains are kept between visits, like the stars.
+  writeLocal("showtimes:place", { region: $("region").value, chains: selectedChains() });
   load(state.main);
   if (state.movieKey) load(state.sheet);
 }
 
 const dropdowns = [];
+
+// ---------------------------------------------------------------- filters in the address
+
+/** The address without its filters: "#/", "#/cinemas", "#/cinema/<key>" or "#/movie/<key>". */
+const hashPath = () => location.hash.split("?")[0];
+
+/** Tick these values in a checklist that isn't filled yet; filling it keeps the ones that exist. */
+function seedChoice(select, values) {
+  if (!values.length) return;
+  select.dataset.sig = "";
+  select.replaceChildren(...values.map((v) => new Option(v === STARRED ? "★ Starred" : v.includes("|") ? splitKey(v)[1] : v, v, true, true)));
+}
+
+/** Set the region and chains, when they're ones the page has. */
+function setPlace(region, chains) {
+  if (typeof region === "string" && [...$("region").options].some((o) => o.value === region)) $("region").value = region;
+  const known = Array.isArray(chains) ? chains.filter((c) => c === "GSC" || c === "TGV") : [];
+  if (known.length) for (const box of document.querySelectorAll("input[name=chain]")) box.checked = known.includes(box.value);
+}
+
+/** Start from the filters in a shared or reloaded address: "#/?date=2026-11-12&region=Northern&q=..." */
+function readAddress() {
+  const at = location.hash.indexOf("?");
+  if (at < 0) return;
+  const params = new URLSearchParams(location.hash.slice(at + 1));
+  const day = (name) => (/^\d{4}-\d{2}-\d{2}$/.test(params.get(name) || "") && params.get(name) >= todayMyt() ? params.get(name) : null);
+  const option = (select, value) => value && [...select.options].some((o) => o.value === value);
+  if (day("date")) state.date = day("date");
+  setPlace(params.get("region"), params.has("chain") ? params.get("chain").split(",") : null);
+  if (params.get("q")) $("q").value = params.get("q");
+  if (params.get("cq")) $("cq").value = params.get("cq");
+  seedChoice($("cinema"), params.getAll("cinema"));
+  seedChoice($("hall"), params.getAll("hall"));
+  if (option($("sort"), params.get("sort"))) $("sort").value = params.get("sort");
+  // "Nearest" needs a location, which a link can't carry.
+  if (option($("c-sort"), params.get("csort")) && params.get("csort") !== "near") $("c-sort").value = params.get("csort");
+  if (params.get("concerts") === "1") $("hide-concerts").checked = false;
+  if (params.get("group") === "cinema") document.querySelector("input[name=group][value=cinema]").checked = true;
+  if (day("day") && hashPath().startsWith("#/movie/")) state.pendingSheetDate = day("day");
+}
+
+/** The filters as they'd go in the address, so a reload or a shared link shows the same thing. */
+function addressFor() {
+  const params = new URLSearchParams();
+  const chains = selectedChains();
+  if (state.date) params.set("date", state.date);
+  if ($("region").value) params.set("region", $("region").value);
+  if (chains.length === 1) params.set("chain", chains[0]);
+  if (state.movieKey) {
+    params.set("day", state.sheet.date);
+    if (selectedGroup() === "cinema") params.set("group", "cinema");
+  } else if (state.page === "movies") {
+    if (searchText()) params.set("q", searchText());
+    for (const v of chosenValues($("cinema"))) params.append("cinema", v);
+    for (const v of chosenValues($("hall"))) params.append("hall", v);
+    if ($("sort").value !== "shows") params.set("sort", $("sort").value);
+    if (!$("hide-concerts").checked) params.set("concerts", "1");
+  } else if (state.page === "cinemas") {
+    if (cinemaQuery()) params.set("cq", cinemaQuery());
+    if ($("c-sort").value === "movies") params.set("csort", "movies");
+  }
+  const path = state.movieKey ? `#/movie/${encodeURIComponent(state.movieKey)}` : pageHash();
+  const query = params.toString();
+  return { path, hash: query ? `${path}?${query}` : path };
+}
+
+let addressTimer = null;
+/** Keep the address in step with the filters, without adding history entries (and not on every keystroke). */
+function syncAddress() {
+  clearTimeout(addressTimer);
+  addressTimer = setTimeout(() => {
+    const { path, hash } = addressFor();
+    // Mid-navigation (the hash has changed but route() hasn't run): leave it alone.
+    if ((hashPath() || "#/") !== path || hash === (location.hash || "#/")) return;
+    try {
+      history.replaceState(history.state, "", hash);
+    } catch {
+      // Some browsers limit how often the address may change; the next change catches up.
+    }
+  }, 250);
+}
 
 /** What the folded filter buttons say on phones: the date, then only what differs from the defaults. */
 function renderFilterSummary() {
@@ -1509,12 +1649,13 @@ function render() {
   if (state.movieKey) renderSheet();
   renderStars();
   for (const d of dropdowns) d.sync();
+  syncAddress();
 }
 
 // ---------------------------------------------------------------- wiring
 
 function init() {
-  import("./analytics.js?v=30").then((analytics) => {
+  import("./analytics.js?v=31").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;
@@ -1524,7 +1665,7 @@ function init() {
     track = () => {};
     pendingAnalytics = null;
   }); // A blocked/missing analytics module must not prevent the app from starting.
-  // Only the starred cinemas are kept between visits; every other setting starts from its default.
+  // The starred cinemas, the region and the chains are kept between visits; other settings start from their defaults.
   try {
     storage("localStorage")?.removeItem("showtimes:prefs"); // what older versions saved
   } catch {
@@ -1538,6 +1679,11 @@ function init() {
     if (id === "m-cinema") options.header = $("m-chains");
     dropdowns.push(enhanceSelect($(id), options));
   }
+  // The saved region and chains first, then whatever the address says.
+  const place = readLocal("showtimes:place", null);
+  if (place) setPlace(place.region, place.chains);
+  readAddress();
+  $("m-more").addEventListener("click", () => foldFacts(!$("m-side").classList.contains("folded")));
   for (const id of ["dates", "c-dates", "v-dates", "m-dates"]) wheelScrolls($(id));
   tickClock();
   setInterval(tickClock, 15000);

@@ -4,9 +4,13 @@
 //
 //   node scripts/snapshot.mjs --out _site/data/showtimes.json
 //   node scripts/snapshot.mjs --out ... --reuse https://edwardywy.github.io/52frames/data/showtimes.json
+//   node scripts/snapshot.mjs --out ... --reuse <url> --reuse-hours 5 --guard <url>
 //
 // --reuse copies the published snapshot instead of fetching (used when a push redeploys the site,
-// so code changes don't add load on the chains); it fetches only if that copy is missing or stale.
+// so code changes don't add load on the chains); it fetches only if that copy is missing or older
+// than --reuse-hours (13 by default).
+// --guard compares the new snapshot with the published one and fails, publishing nothing, when a
+// chain lists far fewer cinemas than before (--force 1 publishes anyway).
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -14,7 +18,7 @@ import { dirname } from "node:path";
 import { mapLimit } from "../site/js/aggregator.js";
 import { todayMyt } from "../site/js/models.js";
 import { GSC, findGscSlug, gscMovieSlugs, parseGscSubtitles } from "../site/js/providers.js";
-import { SNAPSHOT_MAX_AGE_MS, decodeSnapshot, encodeSnapshot } from "../site/js/snapshot.js";
+import { SNAPSHOT_MAX_AGE_MS, decodeSnapshot, encodeSnapshot, snapshotRegressions } from "../site/js/snapshot.js";
 import { parseXml } from "./xml.mjs";
 import { collectCatalogue } from "../site/js/catalog.js";
 
@@ -33,6 +37,22 @@ function write(json) {
   console.log(`wrote ${out} (${(json.length / 1024).toFixed(0)} KB)`);
 }
 
+const reuseMaxAge = args["reuse-hours"] ? Number(args["reuse-hours"]) * 3600 * 1000 : SNAPSHOT_MAX_AGE_MS;
+
+/** The published snapshot as packed JSON, or null when it can't be read. */
+async function published(url) {
+  try {
+    const res = await fetch(url, { headers: { "cache-control": "no-cache" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const snap = await res.json();
+    decodeSnapshot(snap);
+    return snap;
+  } catch (err) {
+    console.log(`can't read ${url}: ${err.message}; publishing without comparing`);
+    return null;
+  }
+}
+
 async function reuse(url) {
   try {
     const res = await fetch(url, { headers: { "cache-control": "no-cache" } });
@@ -41,7 +61,7 @@ async function reuse(url) {
     const snap = JSON.parse(text);
     decodeSnapshot(snap); // must be readable by this version of the site
     const age = Date.now() - Date.parse(snap.generated_at);
-    if (age > SNAPSHOT_MAX_AGE_MS) throw new Error(`too old (${Math.round(age / 3600000)} h)`);
+    if (age > reuseMaxAge) throw new Error(`too old (${Math.round(age / 3600000)} h)`);
     write(text);
     console.log(`reused published snapshot from ${snap.generated_at}`);
     return true;
@@ -102,7 +122,12 @@ async function build() {
   const total = days.reduce((n, d) => n + d.showtimes.length, 0);
   // Every cinema failing (e.g. an API change) must not replace a good snapshot with an empty one.
   if (!total && days.every((d) => d.errors.length)) throw new Error("no showtimes at all, every day had errors");
-  write(JSON.stringify(encodeSnapshot(days, new Date().toISOString())));
+  const snapshot = encodeSnapshot(days, new Date().toISOString());
+  // A chain answering with a short cinema list (and no error) must not replace a good snapshot.
+  const before = args.guard && args.force !== "1" && args.force !== "true" ? await published(args.guard) : null;
+  const lost = before ? snapshotRegressions(before, snapshot) : [];
+  if (lost.length) throw new Error(`not publishing, the new snapshot lost cinemas (run the workflow with "force" to publish anyway):\n${lost.join("\n")}`);
+  write(JSON.stringify(snapshot));
 }
 
 if (!(args.reuse && (await reuse(args.reuse)))) await build();

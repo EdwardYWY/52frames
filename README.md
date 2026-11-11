@@ -113,10 +113,16 @@ build step, no dependencies.
 - **Location** (optional, top bar): shows the distance to each cinema and enables "Nearest". GSC
   sends cinema coordinates; TGV's are in `site/js/places.js` (looked up once from OpenStreetMap,
   © OpenStreetMap contributors), because TGV's own map links are missing or wrong for many cinemas.
-- **Starred cinemas** (top bar → Starred): star or unstar any cinema, clear all. Only the stars
-  are kept between visits (this browser's `localStorage`); every other setting starts from its
-  default each time. Analytics records feature
+- **Starred cinemas** (top bar → Starred): star or unstar any cinema, clear all. The stars,
+  the region and the chains are kept between visits (this browser's `localStorage`); every other
+  setting starts from its default each time. Analytics records feature
   actions without sending the saved star list or precise location.
+- **Address**: the filters in use are kept in the address (`#/?date=2026-11-12&region=Northern&q=…`),
+  so a reload or a copied link opens the same view. The region and chains are also remembered
+  between visits (`localStorage`), like the stars; the address wins when it says otherwise.
+- **Started shows** in the movie view are folded behind "Show them" while there are shows still to
+  come. On phones the poster and facts fold behind a Details button, so the schedule comes first.
+  A cinema page opened from the list starts on its first day rather than every date.
 
 Live seat maps (the hidden 1.5-second hold) use the chains' public read-only endpoints, with no login:
 TGV's `moviesession_getseatplan` and GSC's `getHallSeatStatus`. Shows don't carry the chains' session
@@ -129,15 +135,20 @@ appear normally. Nothing is fetched until a hold completes, and an open map isn'
 
 How it works:
 
-1. **Shared snapshot (normal case).** Every 6 hours a GitHub Action (`scripts/snapshot.mjs`)
+1. **Shared snapshot (normal case).** About every 6 hours a GitHub Action (`scripts/snapshot.mjs`)
    discovers movies and available booking dates from both chains, including advance sales.
    GSC sessions are fetched per movie/date; TGV movie dates identify cinema/date pairs, fetched
    once each. Four requests run at a time. Genres and tags are retained in snapshot version 3.
    One compact `data/showtimes.json` serves all visitors; date and region changes need no requests.
    Pushes reuse a compatible, fresh snapshot. A schema change fetches a new one automatically.
-   Failed catalogue refreshes do not replace a good snapshot with incomplete data.
+   Failed catalogue refreshes do not replace a good snapshot with incomplete data. Neither does a
+   refresh in which a chain has under 60% of the cinemas (with shows) it had before: GSC's cinema
+   list has come back nearly empty overnight with no error. The run fails and the published snapshot
+   stays; to publish anyway, run the workflow by hand with *force* ticked.
 
-2. **Live fallback.** If the snapshot is missing or older than 13 hours, the movie list
+   A snapshot older than 13 hours is still shown, with a note saying how old it is.
+
+2. **Live fallback.** If the snapshot is missing or older than 36 hours, the movie list
    discovers the catalogue live for the selected region and chains. Movie details reuse those
    sessions; a date missing from the snapshot can still load per cinema/date. Failures are shown
    while the remaining results stay available. Session requests are cached for 10 minutes.
@@ -168,8 +179,9 @@ scripts/
 ```
 
 `.github/workflows/pages.yml` runs the Python and JavaScript tests on every push and pull request,
-deploys `site/` to Pages on pushes to `main`, and rebuilds the snapshot every 6 hours
-(00:17, 06:17, 12:17, 18:17 UTC = 08:17, 14:17, 20:17, 02:17 in Malaysia). To refresh it by hand:
+deploys `site/` to Pages on pushes to `main`, and runs every 3 hours at :17 (GitHub often delays or
+skips scheduled runs). A scheduled run fetches a new snapshot only when the published one is over
+5 hours old, so the chains see about one refresh every 6 hours. To refresh it by hand:
 Actions → "Deploy site to GitHub Pages" → Run workflow. In the repository settings, **Settings → Pages →
 Source** must be **GitHub Actions**.
 
