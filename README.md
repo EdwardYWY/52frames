@@ -81,7 +81,7 @@ build step, no dependencies.
   or most shows); starred cinemas get a star pattern in both. Region (starts from the main page's),
   cinema (several at once, or ★ Starred) and start-time dropdowns stay pinned under the header
   while the schedule scrolls (not on phones); a Top button returns to the top. Each time links to the chain's booking page, where seats are chosen. Sold-out times
-  are struck through and say "Sold out", started ones are shown in grey and say "Started", after-midnight ones are marked `+1`.
+  are struck through and say "Sold out", started ones are dimmed and say "Started", after-midnight ones are marked `+1`.
   Hidden extra: rest the mouse on a showtime for 1.5 seconds (or press and hold it for 1.5 seconds on a
   phone, or focus it with the keyboard and press S) to see that show's live seat map, fetched from GSC or TGV on the spot; a normal click or tap still books.
 - **Subtitles** per chain ("Subtitles (GSC)", "Subtitles (TGV)") with a link to each chain's page
@@ -91,12 +91,12 @@ build step, no dependencies.
   "Not listed"; the live fallback has TGV's only.
 - **Background** uses a static, seamless contour pattern with wide spacing and 40% line opacity.
   Phones crop rather than shrink the pattern.
-- **Themes**: dark, or a cream light theme. It follows the device's light/dark setting until the
-  top-bar toggle is used; that choice stays in this browser.
+- **Themes**: dark for everyone; the top-bar ◐ button switches to a cream light theme, and this
+  browser remembers the choice.
 - **Accessibility**: checked against WCAG 2.2 A, AA and AAA with axe-core, plus keyboard and
   screen-reader checks. Skip links ("Skip to movies", "Skip to schedule"), dropdowns that announce
   their current choice, text sizes in `rem` (they follow the browser's font-size setting),
-  sentence-case labels, 7:1 text contrast in both themes, and no motion when the device asks for
+  sentence-case labels, 7:1 text contrast in both themes (4.5:1 for started and sold-out times), and no motion when the device asks for
   reduced motion.
   No contour generation or animation runs in the browser.
 - **Posters** come from both chains; when both have one, the higher-resolution one is used where

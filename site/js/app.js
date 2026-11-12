@@ -1877,7 +1877,8 @@ function init() {
     render();
   });
 
-  // Light / dark theme: index.html applies it before the first paint; the button flips and saves it.
+  // Dark for everyone; the button switches to light (and back) and this browser remembers it.
+  // index.html applies the saved choice before the first paint.
   const themeButton = $("theme");
   const showTheme = () => {
     const light = document.documentElement.dataset.theme === "light";
@@ -1889,14 +1890,6 @@ function init() {
     const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = next;
     try { storage("localStorage")?.setItem("showtimes:theme", next); } catch {}
-    showTheme();
-  });
-  // Without a saved choice, follow the system when it switches.
-  matchMedia("(prefers-color-scheme: light)").addEventListener("change", (e) => {
-    let saved = null;
-    try { saved = storage("localStorage")?.getItem("showtimes:theme"); } catch {}
-    if (saved) return;
-    document.documentElement.dataset.theme = e.matches ? "light" : "dark";
     showTheme();
   });
 
