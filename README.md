@@ -96,7 +96,7 @@ build step, no dependencies.
 - **Accessibility**: checked against WCAG 2.2 A, AA and AAA with axe-core, plus keyboard and
   screen-reader checks. Skip links ("Skip to movies", "Skip to schedule"), dropdowns that announce
   their current choice, text sizes in `rem` (they follow the browser's font-size setting),
-  sentence-case labels, 7:1 text contrast in both themes (4.5:1 for started and sold-out times), and no motion when the device asks for
+  sentence-case labels, 7:1 text contrast in both themes, and no motion when the device asks for
   reduced motion.
   No contour generation or animation runs in the browser.
 - **Posters** come from both chains; when both have one, the higher-resolution one is used where

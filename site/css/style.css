@@ -15,7 +15,7 @@
   --ink: #e9e8e3;
   --ink-2: #c4c3be;
   --muted: #a9aaaf; /* 7:1 or more on --bg, --surface and --surface-2 */
-  --dim: #8b8c91; /* started and sold-out showtimes: quieter than --muted, still 4.5:1 or more */
+  --dim: #a9aaaf; /* started and sold-out showtimes: 7:1 like --muted; the outlined tag and thin time set them apart */
   --line: #2b2d32;
   --line-strong: #e9e8e3;
   --band: #e9e8e3;
@@ -91,7 +91,7 @@
   --ink: #17181b;
   --ink-2: #36373c;
   --muted: #4a4b50;
-  --dim: #616267;
+  --dim: #4a4b50;
   --line: #d8d2c3;
   --line-strong: #17181b;
   --band: #17181b;
@@ -538,7 +538,7 @@ select:focus { outline: none; border-bottom-color: var(--focus); background: var
 .concert-choice input { accent-color: var(--ink); width: 18px; height: 18px; }
 a.time:hover, a.time.holding { background: var(--band); color: var(--band-ink); border-color: var(--band); }
 a.time:hover i, a.time:hover .overnight, a.time.holding i, a.time.holding .overnight { color: var(--band-accent); }
-/* Sold out and started: a dim colour (not opacity, so text keeps 4.5:1), a lighter time and an
+/* Sold out and started: a quieter colour (not opacity, so text keeps 7:1), a lighter time and an
    outlined chain tag, so they stand apart from bookable times without relying on colour alone. */
 .time.full, .trow.full, .time.past, .trow.past { color: var(--dim); }
 .time.full i, .time.past i, .trow.full .trow-what, .trow.past .trow-what, .trow.full .trow-go, .trow.past .trow-go { color: var(--dim); }
