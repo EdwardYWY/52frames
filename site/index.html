@@ -3,14 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <meta name="description" content="GSC and TGV showtimes across Malaysia, on one page.">
 <title>52 Frames</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Cpath d='M6 6h14l6 6v14H6z' fill='%23ffd200'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=31">
-<script type="module" src="js/app.js?v=31"></script>
+<script>
+  // Theme before the first paint: dark unless this browser chose light with the top-bar button.
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem("showtimes:theme"); } catch (e) {}
+    document.documentElement.dataset.theme = saved === "light" ? "light" : "dark";
+  })();
+</script>
+<link rel="stylesheet" href="css/style.css?v=32">
+<script type="module" src="js/app.js?v=32"></script>
 </head>
 <body>
+<a class="skip-link" href="#grid" id="skip-main">Skip to movies</a>
 
 <header class="topbar">
   <div class="topbar-in">
@@ -20,6 +29,9 @@
     <div class="topbar-tools">
       <button type="button" class="tool" id="locate" aria-pressed="false" title="Show distance from where you are">
         <span class="tool-icon" aria-hidden="true">◎</span><span class="tool-text" id="locate-text">Location</span>
+      </button>
+      <button type="button" class="tool" id="theme" aria-pressed="false" aria-label="Light theme" title="Light theme">
+        <svg class="tool-icon theme-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg><span class="tool-text">Light</span>
       </button>
       <button type="button" class="tool" id="open-stars" title="Manage starred cinemas">
         <span class="tool-icon" aria-hidden="true">★</span><span class="tool-text">Starred</span><span class="tool-badge mono" id="star-count"></span>
@@ -92,13 +104,15 @@
     <div id="warnings"></div>
   </div>
 
-  <div class="grid" id="grid"></div>
+  <div class="grid" id="grid" tabindex="-1" aria-label="Movies"></div>
 
   <footer class="foot">
     <p>Times are Malaysia time. Tap a time to book on the chain's own site; seats are chosen there.
       ☆ a cinema to keep it at the top; your stars, region and chain choice stay in this browser only, and other settings reset on each visit.
       The address keeps the filters in use, so a copied link opens the same view.
       Struck-through times are sold out; <b class="mono">+1</b> marks shows after midnight.</p>
+    <p>To see a show's live seats, rest the mouse on a time, press and hold it, or move to it with the keyboard and press <kbd>S</kbd>.</p>
+    <p>Short forms: MYT is Malaysia time; BM is Bahasa Malaysia (Malay); OKU seats are for wheelchair users.</p>
     <p>Google Analytics measures visits and feature usage, with advertising features disabled.
       Search text and your precise location are not included in our analytics events.</p>
     <p>Data comes straight from GSC and TGV's public website endpoints, refreshed in a shared snapshot.
@@ -146,7 +160,7 @@
   </form>
 
   <div class="active-filters" id="c-active-filters" hidden></div>
-  <div id="c-list"></div>
+  <div id="c-list" tabindex="-1"></div>
 </main>
 
 <main class="page" id="cinema-page" hidden>
@@ -161,8 +175,8 @@
   <div class="toolbar v-toolbar">
     <div class="field field-dates"><span class="label">Date</span><div class="date-strip dates" id="v-dates" role="radiogroup" aria-label="Date"></div></div>
   </div>
-  <div class="sec-head"><h3>Movies</h3><span class="sec-rule"></span><span class="mono" id="v-count"></span></div>
-  <div id="v-movies"></div>
+  <div class="sec-head"><h2>Movies</h2><span class="sec-rule"></span><span class="mono" id="v-count"></span></div>
+  <div id="v-movies" tabindex="-1"></div>
 </main>
 <div class="notice" id="location-notice" role="alert" hidden>
   <p id="location-notice-text"></p>
@@ -194,12 +208,13 @@
 
 <div class="sheet" id="sheet" hidden>
   <div class="sheet-backdrop" data-close></div>
-  <article class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="m-title">
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="m-title">
     <header class="m-head">
       <div class="m-head-row">
         <button class="close" type="button" data-close aria-label="Back to all movies">
           <span aria-hidden="true">←</span><span class="close-text">Back</span>
         </button>
+        <a class="skip-link" href="#m-schedule" id="skip-schedule">Skip to schedule</a>
         <h2 id="m-title"></h2>
       </div>
       <div class="date-strip" id="m-dates" role="radiogroup" aria-label="Date"></div>
@@ -235,10 +250,10 @@
         </label>
       </div>
       <div class="m-status" id="m-status"></div>
-      <div id="m-schedule"></div>
+      <div id="m-schedule" tabindex="-1"></div>
     </div>
     <button type="button" class="to-top" id="to-top" hidden><span aria-hidden="true">↑</span><span>Top</span></button>
-  </article>
+  </div>
 </div>
 </body>
 </html>

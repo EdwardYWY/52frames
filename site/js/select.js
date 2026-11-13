@@ -51,11 +51,18 @@ export function enhanceSelect(select, { summary, header, search } = {}) {
   button.setAttribute("aria-haspopup", "listbox");
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", `${id}-list`);
-  const labelText = select.closest("label")?.querySelector(".label")?.textContent?.trim();
-  if (labelText) button.setAttribute("aria-label", labelText);
+  const labelNode = select.closest("label")?.querySelector(".label");
+  const labelText = labelNode?.textContent?.trim();
   const text = document.createElement("span");
   text.className = "cselect-text";
+  text.id = `${id}-value`;
   button.append(text);
+  // Named by the field label and the current choice ("Region, All Malaysia"), so screen readers
+  // hear what is selected, not only which field this is.
+  if (labelNode) {
+    labelNode.id ||= `${id}-label`;
+    button.setAttribute("aria-labelledby", `${labelNode.id} ${text.id}`);
+  } else if (labelText) button.setAttribute("aria-label", labelText);
   root.append(button);
 
   const list = document.createElement("div");

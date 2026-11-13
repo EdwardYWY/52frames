@@ -1,6 +1,7 @@
 // A hidden extra: keep the mouse on a showtime for 1.5 seconds, or press and hold it on a touch
 // screen, to see that show's live seat map, straight from the chain (GSC or TGV). Nothing is
 // fetched until the hold is complete. A plain tap or click still opens the booking page.
+// Keyboard: with a showtime focused, press S; Esc closes the map and returns to the showtime.
 
 export const HOLD_MS = 1500;
 const TRACE_DELAY_MS = 300; // the outline starts after this, so passing over a time doesn't flash it
@@ -153,9 +154,11 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
     clearTimeout(closeTimer);
     controller?.abort();
     controller = null;
+    const back = mode === "keyboard" && pop.contains(document.activeElement) ? anchor : null;
     anchor = null;
     pop.hidden = true;
     pop.replaceChildren();
+    back?.focus({ preventScroll: true });
   }
 
   const closeSoon = () => {
@@ -188,6 +191,9 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
     pop.dataset.chain = show.chain;
     controller = new AbortController();
     const { signal } = controller;
+    // Inside the open dialog (the movie view), so screen readers can reach it from there.
+    const host = target.closest("[role=dialog]") || document.body;
+    if (pop.parentNode !== host) host.append(pop);
     const head = el(
       "div",
       { class: "seatmap-head" },
@@ -200,6 +206,7 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
     pop.replaceChildren(head, sub, body);
     pop.hidden = false;
     place();
+    if (how === "keyboard") head.querySelector(".seatmap-close").focus({ preventScroll: true });
     const priceLegend = el("div", { class: "seat-legend seat-prices mono", "aria-live": "polite" });
     let loadedPlan = null;
     let prices = [];
@@ -254,6 +261,19 @@ export function enableSeatPreview(root, { selector, showFor, fetchPlan, fetchPri
     const target = node instanceof Element ? node.closest(selector) : null;
     return target && root.contains(target) ? target : null;
   };
+
+  // Keyboard: S on a focused showtime opens its seat map at once; leaving the map closes it.
+  root.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() !== "s" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const target = showtimeAt(e.target);
+    const show = target && showFor(target);
+    if (!show) return;
+    e.preventDefault();
+    open(target, show, "keyboard");
+  });
+  pop.addEventListener("focusout", (e) => {
+    if (mode === "keyboard" && !pop.hidden && e.relatedTarget && !pop.contains(e.relatedTarget)) close();
+  });
 
   // Mouse: resting on a showtime starts the clock; leaving it stops the clock or closes the map.
   root.addEventListener("pointerover", (e) => {

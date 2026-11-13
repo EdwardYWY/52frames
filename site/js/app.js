@@ -2,16 +2,16 @@
 // sheet with its schedule, and a panel to manage starred cinemas. Fetching and parsing live in providers.js; grouping and caching in
 // aggregator.js.
 
-import { collectShowtimes, createCache, filterShowtimes, lightPosters, summarizeMovies, uniqueShows } from "./aggregator.js?v=31";
-import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=31";
-import { GSC_PREMIUM_HALL_GROUPS, TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=31";
-import { createProviders, domParseXml } from "./providers.js?v=31";
-import { enhanceSelect } from "./select.js?v=31";
-import { collectCatalogue } from "./catalog.js?v=31";
-import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=31";
-import { loadSnapshot } from "./snapshot.js?v=31";
-import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=31";
-import { enableSeatPreview } from "./seatmap.js?v=31";
+import { collectShowtimes, createCache, filterShowtimes, lightPosters, summarizeMovies, uniqueShows } from "./aggregator.js?v=32";
+import { REGIONS, movieGroupKey, distanceKm, normalizeLanguage, normalizeTitle, todayMyt } from "./models.js?v=32";
+import { GSC_PREMIUM_HALL_GROUPS, TGV_LOCATIONS, TGV_NAMES } from "./places.js?v=32";
+import { createProviders, domParseXml } from "./providers.js?v=32";
+import { enhanceSelect } from "./select.js?v=32";
+import { collectCatalogue } from "./catalog.js?v=32";
+import { browseMovies, isConcert, screeningLabel, overnightLabel } from "./browse.js?v=32";
+import { loadSnapshot } from "./snapshot.js?v=32";
+import { hallLabel, hallTypes, sortHallTypes } from "./halls.js?v=32";
+import { enableSeatPreview } from "./seatmap.js?v=32";
 // Keep early interactions while the optional module loads, without delaying the app.
 let pendingAnalytics = [];
 let track = (...event) => {
@@ -524,7 +524,7 @@ function renderPickStrip(strip, name, dates) {
     strip.dataset.sig = sig;
     strip.replaceChildren(
       el("label", { class: "day day-all", title: "Every date" },
-        el("input", { type: "radio", name, value: "" }),
+        el("input", { type: "radio", name, value: "", "aria-label": "All dates" }),
         el("span", {}, el("small", {}, "Every"), el("b", {}, "All"), el("small", { class: "day-month" }, "date"))),
       ...dates.map((iso) => {
         const p = dateParts(iso);
@@ -907,7 +907,7 @@ function movieCard(summary) {
       "a",
       { class: "card", href: `#/movie/${encodeURIComponent(summary.key)}` },
       posterFrame(summary, GRID_SIZES, smallPosters(summary)),
-      el("div", { class: "card-body" }, el("h3"), el("div", { class: "card-shows mono" }), el("div", { class: "card-status mono" }), el("div", { class: "card-meta mono" })),
+      el("div", { class: "card-body" }, el("h2"), el("div", { class: "card-shows mono" }), el("div", { class: "card-status mono" }), el("div", { class: "card-meta mono" })),
     );
     cards.set(summary.key, card);
   }
@@ -923,7 +923,7 @@ function movieCard(summary) {
   card.dataset.next = summary.nextDate;
   card.querySelector(".card-status").textContent = screeningLabel(summary.nextDate, todayMyt());
   card.querySelector(".card-shows").textContent = `${plural(summary.showCount, "show")} scheduled`;
-  card.querySelector("h3").textContent = summary.title;
+  card.querySelector("h2").replaceChildren(...withLang(summary.title));
   card.querySelector(".card-meta").textContent = [runtime(summary.duration_mins), summary.rating, summary.language]
     .filter(Boolean)
     .join(" · ");
@@ -1154,7 +1154,7 @@ function cinemaMovie(summary, now) {
   return el("section", { class: "cm" },
     el("a", { class: "cm-poster", href, "data-next": opensOn, tabindex: "-1", "aria-hidden": "true" }, posterFrame(summary, CINEMA_POSTER_SIZES, smallPosters(summary))),
     el("div", { class: "cm-body" },
-      el("h3", {}, el("a", { href, "data-next": opensOn, title: "All cinemas showing this movie" }, summary.title)),
+      el("h3", {}, el("a", { href, "data-next": opensOn, title: "All cinemas showing this movie" }, withLang(summary.title))),
       el("div", { class: "cm-meta mono" }, [runtime(summary.duration_mins), summary.rating, summary.language].filter(Boolean).join(" · ")),
       state.date
         ? times(summary.shows)
@@ -1178,6 +1178,7 @@ function allowSeatPreview(node, show) {
   if (!providers[show.chain]?.fetchSeatPlan || !show.cinema_id) return;
   seatShows.set(node, show);
   node.classList.add("seat-hold");
+  node.setAttribute("aria-keyshortcuts", "S"); // S shows the live seat map (seatmap.js)
 }
 
 /** A show's live seats or prices. GSC's premium halls need the cinema's hall group. */
@@ -1188,12 +1189,39 @@ function fetchSeatData(show, signal, method) {
 }
 let seatPreview = null;
 
+// Runs of non-Latin script in a title, tagged with their language so screen readers switch voice
+// ("V 空枪 (Cantonese / Mandarin)" reads the Chinese in Chinese). Han without kana is taken as Chinese.
+const SCRIPT_LANGS = [
+  [/[\p{Script=Hiragana}\p{Script=Katakana}]/u, "ja"],
+  [/\p{Script=Hangul}/u, "ko"],
+  [/\p{Script=Han}/u, "zh"],
+  [/\p{Script=Tamil}/u, "ta"],
+  [/\p{Script=Devanagari}/u, "hi"],
+  [/\p{Script=Thai}/u, "th"],
+];
+const NON_LATIN_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Tamil}\p{Script=Devanagari}\p{Script=Thai}][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Tamil}\p{Script=Devanagari}\p{Script=Thai}\p{M}\s·・ー]*/gu;
+function withLang(text) {
+  const out = [];
+  let last = 0;
+  for (const m of String(text).matchAll(NON_LATIN_RUN)) {
+    const run = m[0].trimEnd();
+    let lang = SCRIPT_LANGS.find(([re]) => re.test(run))?.[1];
+    if (lang === "zh" && SCRIPT_LANGS[0][0].test(text)) lang = "ja"; // kanji in a Japanese title
+    if (!lang) continue;
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(el("span", { lang }, run));
+    last = m.index + run.length;
+  }
+  if (last < String(text).length) out.push(String(text).slice(last));
+  return out.length ? out : [String(text)];
+}
+
 function timeChip(show, now) {
   const overnight = show.start.slice(0, 10) > show.business_date;
   const past = show.start < now;
   const label = `${hhmm(show.start)} ${show.experience} · ${show.cinema_name} · ${show.hall}${overnight ? " · after midnight" : ""}${
     show.sold_out ? " · sold out" : ""
-  }${past ? " · started" : ""}`;
+  }${past ? " · started" : ""}${show.booking_url ? " · opens in a new tab" : ""}`;
   const chip = el(
     show.booking_url ? "a" : "span",
     { class: `time${show.sold_out ? " full" : ""}${past ? " past" : ""}`, title: label, "aria-label": label },
@@ -1264,6 +1292,7 @@ function timeRow(show, now) {
     ),
     el("span", { class: "trow-what mono" }, [show.experience, show.hall, km].filter(Boolean).join(" · ")),
     el("span", { class: "trow-go mono" }, show.sold_out ? "Sold out" : past ? "Started" : show.booking_url ? "Book ↗" : ""),
+    show.booking_url ? el("span", { class: "sr-only" }, " (opens in a new tab)") : null,
   );
   if (show.booking_url) Object.assign(row, { href: show.booking_url, target: "_blank", rel: "noopener" });
   allowSeatPreview(row, show);
@@ -1305,12 +1334,12 @@ function renderSheet() {
     else if (summary.posters.length) $("m-poster").replaceChildren(posterFrame(summary, HERO_SIZES));
   }
 
-  $("m-title").textContent = summary?.title || (view.loading ? "Loading…" : "Movie not found");
+  $("m-title").replaceChildren(...withLang(summary?.title || (view.loading ? "Loading…" : "Movie not found")));
   document.title = summary ? `${summary.title} · 52 Frames` : "52 Frames";
   const subtitleRow = ([chain, info]) => {
     const text = info.subtitles == null ? "Not listed" : info.subtitles.length ? info.subtitles.join(", ") : "None listed";
     const value = info.info_url
-      ? el("a", { href: info.info_url, target: "_blank", rel: "noopener", title: `${chain}'s page for this movie` }, text, el("span", { class: "ext", "aria-hidden": "true" }, " ↗"))
+      ? el("a", { href: info.info_url, target: "_blank", rel: "noopener", title: `${chain}'s page for this movie` }, text, el("span", { class: "ext", "aria-hidden": "true" }, " ↗"), el("span", { class: "sr-only" }, " (opens in a new tab)"))
       : text;
     return [`Subtitles (${chain})`, value, info.subtitles?.length ? "" : "muted"];
   };
@@ -1453,6 +1482,7 @@ function showPage(page, cinemaKey = null) {
   $("list").hidden = page !== "movies";
   $("cinemas-page").hidden = page !== "cinemas";
   $("cinema-page").hidden = page !== "cinema";
+  $("skip-main").textContent = page === "cinemas" ? "Skip to cinemas" : "Skip to movies";
   for (const [id, on] of [["tab-movies", page === "movies"], ["tab-cinemas", page !== "movies"]]) {
     if (on) $(id).setAttribute("aria-current", "page");
     else $(id).removeAttribute("aria-current");
@@ -1655,7 +1685,7 @@ function render() {
 // ---------------------------------------------------------------- wiring
 
 function init() {
-  import("./analytics.js?v=31").then((analytics) => {
+  import("./analytics.js?v=32").then((analytics) => {
     analytics.initAnalytics();
     track = analytics.track;
     const pending = pendingAnalytics;
@@ -1845,6 +1875,36 @@ function init() {
     state.starred.clear();
     saveStars();
     render();
+  });
+
+  // Dark for everyone; the button switches to light (and back) and this browser remembers it.
+  // index.html applies the saved choice before the first paint.
+  const themeButton = $("theme");
+  const showTheme = () => {
+    const light = document.documentElement.dataset.theme === "light";
+    themeButton.setAttribute("aria-pressed", String(light));
+    themeButton.classList.toggle("on", light);
+  };
+  showTheme();
+  themeButton.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try { storage("localStorage")?.setItem("showtimes:theme", next); } catch {}
+    showTheme();
+  });
+
+  // Skip links move focus without touching the address (the hash is the router).
+  const skipTo = (target) => {
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "start" });
+  };
+  $("skip-main").addEventListener("click", (e) => {
+    e.preventDefault();
+    skipTo($(state.page === "cinema" ? "v-movies" : state.page === "cinemas" ? "c-list" : "grid"));
+  });
+  $("skip-schedule").addEventListener("click", (e) => {
+    e.preventDefault();
+    skipTo($("m-schedule"));
   });
 
   document.addEventListener("keydown", (e) => {
